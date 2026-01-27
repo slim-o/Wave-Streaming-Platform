@@ -1,0 +1,171 @@
+.rt-page {
+  max-width: 980px;
+}
+
+.rt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.rt-title {
+  margin: 0;
+}
+
+.rt-subtitle {
+  margin-top: 6px;
+  color: #666;
+}
+
+.rt-form {
+  margin-top: 18px;
+}
+
+.rt-card {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 14px;
+}
+
+.rt-sectionTitle {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+}
+
+.rt-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.rt-help {
+  color: #666;
+  font-size: 12px;
+}
+
+.rt-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.rt-rowBetween {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.rt-input {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  outline: none;
+  width: 100%;
+}
+
+.rt-tableWrap {
+  overflow-x: auto;
+}
+
+.rt-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rt-table th {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid #eee;
+  color: #666;
+  font-weight: 600;
+}
+
+.rt-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f3f3f3;
+  vertical-align: top;
+}
+
+.rt-shareCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rt-shareInput {
+  width: 120px;
+}
+
+.rt-splitSummary {
+  margin-top: 10px;
+}
+
+.rt-ok {
+  color: green;
+}
+
+.rt-bad {
+  color: #b00020;
+}
+
+.rt-warning {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff8f8;
+  border: 1px solid #ffd2d2;
+  border-left: 6px solid #ffb4a9;
+  border-radius: 10px;
+}
+
+.rt-warning-error {
+  border-left-color: #b00020;
+}
+
+.rt-errorsTitle {
+  margin-top: 0;
+}
+
+.rt-errorsList {
+  margin: 0;
+}
+
+.rt-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  gap: 10px;
+}
+
+.rt-actionsRight {
+  display: flex;
+  gap: 10px;
+}
+
+.rt-btn {
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.rt-btn-primary {
+  border: 1px solid #111;
+  background: #111;
+  color: #fff;
+}
+
+.rt-btn-secondary {
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.rt-btn-danger {
+  padding: 8px 10px;
+  border: 1px solid #f2b8b5;
+  background: #fff;
+  color: #b00020;
+}
