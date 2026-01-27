@@ -1,0 +1,11 @@
+.appShell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+  background: #f7f7f7;
+}
+
+.mainContent {
+  padding: 24px;
+  background: #fff;
+}

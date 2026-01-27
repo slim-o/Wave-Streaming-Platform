@@ -1,55 +1,35 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import { Routes, Route, Link } from "react-router-dom";
+import CreatorLayout from "./layout/CreatorLayout.jsx";
+
+import { Routes, Route, Link, Navigate } from "react-router-dom";
 import Dashboard from "./pages/Dashboard.jsx";
-import RegisterTrack from "./pages/RegisterTrack.jsx";
+import MyTracks from "./pages/MyTracks.jsx";
+import Analytics from "./pages/Analytics.jsx";
 import Royalties from "./pages/Royalties.jsx";
-import MyImpact from "./pages/MyImpact.jsx";
-import './App.css'
+import Collaborators from "./pages/Collaborators.jsx";
+import Settings from "./pages/Settings.jsx";
+import RegisterTrack from "./pages/RegisterTrack.jsx";
+//import MyImpact from "./pages/MyImpact.jsx";
+
+//import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-
-      <nav style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-        <Link to="/">Dashboard</Link>
-        <Link to="/register-track">Register Track</Link>
-        <Link to="/royalties">Royalties</Link>
-        <Link to="/my-impact">My Impact</Link>
-      </nav>
 
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/register-track" element={<RegisterTrack />} />
-        <Route path="/royalties" element={<Royalties />} />
-        <Route path="/my-impact" element={<MyImpact />} />
-      </Routes>
-      
-
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+      {/* will add login filter for creators / users later */}
+      <Route path="/" element={<CreatorLayout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="tracks" element={<MyTracks />} />
+        <Route path="tracks/new" element={<RegisterTrack />} />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="royalties" element={<Royalties />} />
+        <Route path="collaborators" element={<Collaborators />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+    
   )
 }
 
