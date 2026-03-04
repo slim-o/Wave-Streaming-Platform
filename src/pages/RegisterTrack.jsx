@@ -4,7 +4,6 @@ SUCCESS Modal to appear when track uploads successfully
 */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHealth } from "../services/api.js";
 import "./RegisterTrack.css";
 
 const DRAFT_KEY = "wave.registerTrack.draft.v1";
@@ -16,9 +15,6 @@ function emptyContributor() {
 }
 
 export default function RegisterTrack() {
-  const [data, setData] = useState(null);
-  const [err, setErr] = useState("");
-
   const navigate = useNavigate();
 
   const [trackTitle, setTrackTitle] = useState("");
@@ -38,9 +34,6 @@ export default function RegisterTrack() {
 
     try {
       const draft = JSON.parse(raw);
-      getHealth()
-      .then(setData)
-      .catch((e) => setErr(e.message));
       setTrackTitle(draft.trackTitle ?? "");
       setPrimaryArtist(draft.primaryArtist ?? "");
       setReleaseDate(draft.releaseDate ?? "");
@@ -140,8 +133,10 @@ export default function RegisterTrack() {
       fd.append("audio", audioFile);
       fd.append("contributors", JSON.stringify(contributors));
 
+      const token = localStorage.getItem("token");
       const res = await fetch("/api/tracks", {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd
       });
 
@@ -171,12 +166,6 @@ export default function RegisterTrack() {
         <button type="button" className="rt-btn rt-btn-secondary" onClick={() => navigate("/tracks")}>
           Cancel
         </button>
-      </div>
-
-      <div>
-        <h1>Register Track</h1>
-        {err && <p style={{ color: "red" }}>{err}</p>}
-        {data ? <pre>{JSON.stringify(data, null, 2)}</pre> : <p>Loading...</p>}
       </div>
 
       <form className="rt-form" onSubmit={handleSubmit}>

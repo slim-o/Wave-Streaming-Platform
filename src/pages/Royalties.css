@@ -1,0 +1,117 @@
+.ry-page { max-width: 1100px; }
+
+.ry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.ry-title { margin: 0; }
+.ry-subtitle { margin-top: 6px; color: #666; }
+
+.ry-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ry-label { font-size: 14px; color: #444; }
+
+.ry-input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background: #fff;
+}
+
+.ry-error { color: #b00020; margin-top: 10px; }
+
+.ry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.ry-card {
+  margin-top: 16px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.ry-card-title {
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 10px;
+}
+
+.ry-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ry-stat {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.ry-stat-label { font-size: 12px; color: #666; }
+.ry-stat-value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+
+.ry-trace {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+
+.ry-trace-step {
+  background: #f7f7f7;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.ry-trace-label { font-size: 12px; color: #666; }
+.ry-trace-value { font-size: 16px; font-weight: 600; margin-top: 4px; }
+
+.ry-trace-arrow {
+  display: none;
+}
+
+.ry-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ry-table th {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid #eee;
+  color: #666;
+  font-weight: 600;
+}
+
+.ry-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f3f3f3;
+}
+
+@media (max-width: 900px) {
+  .ry-grid {
+    grid-template-columns: 1fr;
+  }
+  .ry-stats {
+    grid-template-columns: 1fr;
+  }
+  .ry-trace {
+    grid-template-columns: 1fr;
+  }
+  .ry-trace-arrow { display: none; }
+}

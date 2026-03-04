@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import "./sidebar.css";
 
 const items = [
@@ -11,6 +11,13 @@ const items = [
 ];
 
 export default function Sidebar() {
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    localStorage.removeItem("token");
+    navigate("/login", { replace: true });
+  }
+
   return (
     <aside className="sidebar">
       <div className="logo">W</div>
@@ -34,6 +41,9 @@ export default function Sidebar() {
           <div className="name">Artist Studio</div>
           <div className="tier">Independent</div>
         </div>
+        <button className="logoutBtn" onClick={handleLogout} type="button">
+          Logout
+        </button>
       </div>
     </aside>
   );

@@ -9,6 +9,8 @@ import Royalties from "./pages/Royalties.jsx";
 import Collaborators from "./pages/Collaborators.jsx";
 import Settings from "./pages/Settings.jsx";
 import RegisterTrack from "./pages/RegisterTrack.jsx";
+import Login from "./pages/Login.jsx";
+import RequireAuth from "./components/RequireAuth.jsx";
 //import MyImpact from "./pages/MyImpact.jsx";
 
 //import './App.css'
@@ -18,7 +20,12 @@ function App() {
 
       <Routes>
       {/* will add login filter for creators / users later */}
-      <Route path="/" element={<CreatorLayout />}>
+      <Route path="/login" element={<Login />} />
+      <Route path="/" element={
+        <RequireAuth>
+          <CreatorLayout />
+        </RequireAuth>
+      }>
         <Route index element={<Dashboard />} />
         <Route path="tracks" element={<MyTracks />} />
         <Route path="tracks/new" element={<RegisterTrack />} />
