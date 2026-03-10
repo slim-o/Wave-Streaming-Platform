@@ -1,4 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { getMe } from "../services/api.js";
 import "./sidebar.css";
 
 const items = [
@@ -12,11 +14,25 @@ const items = [
 
 export default function Sidebar() {
   const navigate = useNavigate();
+  const [displayName, setDisplayName] = useState("Artist Studio");
 
   function handleLogout() {
     localStorage.removeItem("token");
     navigate("/login", { replace: true });
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const me = await getMe();
+        if (!cancelled) setDisplayName(me.display_name || me.email || "Artist Studio");
+      } catch {
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <aside className="sidebar">
@@ -38,7 +54,7 @@ export default function Sidebar() {
       <div className="profile">
         <div className="avatar">AS</div>
         <div>
-          <div className="name">Artist Studio</div>
+          <div className="name">{displayName}</div>
           <div className="tier">Independent</div>
         </div>
         <button className="logoutBtn" onClick={handleLogout} type="button">
