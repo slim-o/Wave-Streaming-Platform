@@ -1,0 +1,66 @@
+.lsb-sidebar {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  bottom: 64px;
+  width: 240px;
+  background: #fff;
+  border-right: 1px solid #eee;
+  padding: 16px;
+  overflow: auto;
+}
+
+.lsb-logo {
+  width: 40px;
+  height: 40px;
+  background: #111;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.lsb-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lsb-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #222;
+}
+
+.lsb-item.active {
+  background: #f2f2f2;
+  font-weight: 600;
+}
+
+.lsb-section {
+  margin-top: 24px;
+  display: grid;
+  gap: 10px;
+}
+
+.lsb-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111;
+}
+
+.lsb-section-item {
+  font-size: 13px;
+  color: #333;
+}
+
+.lsb-section-item.muted {
+  color: #777;
+}
+
+@media (max-width: 900px) {
+  .lsb-sidebar { display: none; }
+}

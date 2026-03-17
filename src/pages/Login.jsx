@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login, registerUser } from "../services/api.js";
+import { getMe, login, registerUser } from "../services/api.js";
 import "./Login.css";
 
 export default function Login() {
@@ -25,7 +25,12 @@ export default function Login() {
         res = await registerUser({ email, password, displayName, role });
       }
       localStorage.setItem("token", res.token);
-      navigate("/", { replace: true });
+      const me = await getMe();
+      if (me.role === "LISTENER") {
+        navigate("/listener", { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     } catch (e2) {
       setErr(e2.message || "Authentication failed");
     } finally {
@@ -38,7 +43,7 @@ export default function Login() {
       <div className="lg-card">
         <div className="lg-header">
           <h1 className="lg-title">{mode === "login" ? "Login" : "Create Account"}</h1>
-          <p className="lg-subtitle">Wave creator access</p>
+          <p className="lg-subtitle">Wave</p>
         </div>
 
         <div className="lg-tabs">

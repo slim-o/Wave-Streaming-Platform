@@ -11,6 +11,11 @@ import Settings from "./pages/Settings.jsx";
 import RegisterTrack from "./pages/RegisterTrack.jsx";
 import Login from "./pages/Login.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
+import ListenerLayout from "./layout/ListenerLayout.jsx";
+import ListenerHome from "./pages/ListenerHome.jsx";
+import ListenerSearch from "./pages/ListenerSearch.jsx";
+import ListenerLibrary from "./pages/ListenerLibrary.jsx";
+import MyImpact from "./pages/MyImpact.jsx";
 //import MyImpact from "./pages/MyImpact.jsx";
 
 //import './App.css'
@@ -34,6 +39,16 @@ function App() {
         <Route path="collaborators" element={<Collaborators />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+      <Route path="/listener" element={
+        <RequireAuth>
+          <ListenerLayout />
+        </RequireAuth>
+      }>
+        <Route index element={<ListenerHome />} />
+        <Route path="search" element={<ListenerSearch />} />
+        <Route path="library" element={<ListenerLibrary />} />
+        <Route path="impact" element={<MyImpact />} />
       </Route>
     </Routes>
     

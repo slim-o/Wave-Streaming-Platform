@@ -68,7 +68,8 @@ export async function getMe() {
 
 // Fetch tracks owned by a user (default: current user)
 export async function getTracks(createdBy = "me") {
-  const res = await authFetch(`/api/tracks?createdBy=${encodeURIComponent(createdBy)}`);
+  const query = createdBy ? `?createdBy=${encodeURIComponent(createdBy)}` : "";
+  const res = await authFetch(`/api/tracks${query}`);
   if (!res.ok) {
     const msg = await res.text();
     throw new Error(msg || "Failed to load tracks");

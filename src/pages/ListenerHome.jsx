@@ -1,0 +1,57 @@
+import { useEffect, useState } from "react";
+import { getTracks } from "../services/api.js";
+import "./ListenerHome.css";
+
+export default function ListenerHome() {
+  const [tracks, setTracks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        setErr("");
+        setLoading(true);
+        const data = await getTracks("all");
+        if (!cancelled) setTracks(data.tracks ?? []);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || "Failed to load tracks");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="lh-page">
+      <div className="lh-header">
+        <h1>Discover</h1>
+        <p>All tracks currently available on Wave.</p>
+      </div>
+
+      {err && <p className="lh-error">{err}</p>}
+
+      {loading ? (
+        <p>Loading...</p>
+      ) : (
+        <div className="lh-grid">
+          {tracks.length === 0 ? (
+            <div className="lh-empty">No tracks available yet.</div>
+          ) : (
+            tracks.map((t) => (
+              <div className="lh-card" key={t.id}>
+                <div className="lh-cover">Album</div>
+                <div className="lh-title">{t.title}</div>
+                <div className="lh-artist">{t.primary_artist_name}</div>
+                <button className="lh-play" type="button">Play</button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

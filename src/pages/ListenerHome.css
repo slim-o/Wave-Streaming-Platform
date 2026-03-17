@@ -1,0 +1,79 @@
+.lh-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.lh-header {
+  margin-bottom: 16px;
+}
+
+.lh-header h1 {
+  margin: 0 0 6px 0;
+}
+
+.lh-header p {
+  margin: 0;
+  color: #666;
+}
+
+.lh-error { color: #b00020; }
+
+.lh-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.lh-card {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.lh-cover {
+  height: 140px;
+  border-radius: 10px;
+  background: #ddd;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: #666;
+}
+
+.lh-title {
+  font-weight: 600;
+}
+
+.lh-artist {
+  font-size: 12px;
+  color: #666;
+}
+
+.lh-play {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #111;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.lh-empty {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+@media (max-width: 1100px) {
+  .lh-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .lh-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -1,0 +1,194 @@
+.ls-shell {
+  min-height: 100vh;
+  background: #f5f5f5;
+  color: #111;
+}
+
+.ls-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  z-index: 20;
+}
+
+.ls-logo {
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.ls-search {
+  flex: 1;
+  max-width: 460px;
+  margin: 0 16px;
+  position: relative;
+}
+
+.ls-search-input {
+  width: 100%;
+  padding: 8px 12px 8px 30px;
+  border-radius: 999px;
+  border: 1px solid #eee;
+  background: #f3f3f3;
+}
+
+.ls-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #666;
+  font-size: 12px;
+}
+
+.ls-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ls-bell {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.ls-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #ddd;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ls-avatar-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #d9d9d9;
+  background: #f4f4f4;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.ls-avatar-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #333;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ls-main {
+  margin-left: 240px;
+  padding: 88px 24px 96px;
+}
+
+.ls-player {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  background: #fff;
+  border-top: 1px solid #eee;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+  padding: 0 16px;
+  z-index: 20;
+}
+
+.ls-player-left {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ls-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #ddd;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+}
+
+.ls-track-title { font-size: 12px; font-weight: 600; }
+.ls-track-artist { font-size: 11px; color: #666; }
+
+.ls-player-center {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.ls-controls { display: flex; gap: 8px; align-items: center; }
+.ls-control { border: none; background: transparent; cursor: pointer; }
+.ls-play {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid #111;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ls-progress {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  font-size: 10px;
+  color: #666;
+  align-items: center;
+}
+
+.ls-bar {
+  height: 4px;
+  background: #eee;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ls-bar-fill { width: 35%; height: 100%; background: #111; }
+
+.ls-player-right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: center;
+}
+
+.ls-vol {
+  width: 80px;
+  height: 4px;
+  background: #eee;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ls-vol-fill { width: 60%; height: 100%; background: #111; }
+
+@media (max-width: 900px) {
+  .ls-main { margin-left: 0; }
+  .ls-player { grid-template-columns: 1fr; height: auto; padding: 8px 16px; gap: 8px; }
+  .ls-player-right { display: none; }
+}

@@ -1,0 +1,94 @@
+.pm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+}
+
+.pm-modal {
+  width: min(420px, calc(100vw - 24px));
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e7e7e7;
+  padding: 16px;
+}
+
+.pm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pm-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.pm-close {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+  color: #555;
+}
+
+.pm-user {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pm-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: #f1f1f1;
+  border: 1px solid #e0e0e0;
+  display: grid;
+  place-items: center;
+}
+
+.pm-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: #333;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pm-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pm-email {
+  font-size: 13px;
+  color: #666;
+}
+
+.pm-note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.45;
+}
+
+.pm-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pm-logout {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
