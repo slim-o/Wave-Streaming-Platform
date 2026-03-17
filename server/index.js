@@ -644,5 +644,227 @@ app.get("/api/dashboard/summary", authenticate, requireRole("CREATOR"), async (r
   }
 });
 
+// =====================================================
+// Listener Impact
+// =====================================================
+
+// Returns month-level impact metrics for the authenticated listener.
+app.get("/api/listener/impact", authenticate, requireRole("LISTENER"), async (req, res) => {
+  const requestedMonth = req.query.month;
+  if (requestedMonth && !/^\d{4}-\d{2}-01$/.test(requestedMonth)) {
+    return res.status(400).send("Invalid month format. Use YYYY-MM-01");
+  }
+  const month = requestedMonth && /^\d{4}-\d{2}-01$/.test(requestedMonth)
+    ? requestedMonth
+    : (() => {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      return `${yyyy}-${mm}-01`;
+    })();
+
+  try {
+    const listenerUserId = req.user.userId;
+
+    const subRes = await pool.query(
+      `SELECT amount_pennies
+       FROM public.subscriptions
+       WHERE listener_user_id = $1
+         AND month_start = $2`,
+      [listenerUserId, month]
+    );
+    const subscriptionPennies = BigInt(subRes.rows[0]?.amount_pennies || 0);
+
+    const playAggRes = await pool.query(
+      `SELECT
+         pe.track_id,
+         t.title,
+         t.primary_artist_name,
+         SUM(pe.listened_ms)::bigint AS listened_ms,
+         COUNT(*)::bigint AS play_events
+       FROM public.play_events pe
+       JOIN public.tracks t ON t.id = pe.track_id
+       WHERE pe.listener_user_id = $1
+         AND pe.month_start = $2
+       GROUP BY pe.track_id, t.title, t.primary_artist_name`,
+      [listenerUserId, month]
+    );
+
+    const trackRows = playAggRes.rows.map((r) => ({
+      trackId: r.track_id,
+      title: r.title,
+      primaryArtistName: r.primary_artist_name,
+      listenedMs: BigInt(r.listened_ms || 0),
+      playEvents: Number(r.play_events || 0)
+    }));
+
+    const totalListeningMs = trackRows.reduce((sum, r) => sum + r.listenedMs, 0n);
+    const totalPlayEvents = trackRows.reduce((sum, r) => sum + r.playEvents, 0);
+
+    // Listener-centric per-track allocation for the selected month.
+    const trackAllocations = new Map(); // trackId -> pennies(BigInt)
+    if (subscriptionPennies > 0n && totalListeningMs > 0n) {
+      const allocated = trackRows.map((r) => ({
+        trackId: r.trackId,
+        listenedMs: r.listenedMs,
+        pennies: (subscriptionPennies * r.listenedMs) / totalListeningMs
+      }));
+
+      let allocatedSum = allocated.reduce((sum, r) => sum + r.pennies, 0n);
+      let remainder = subscriptionPennies - allocatedSum;
+
+      allocated.sort((a, b) => (
+        b.listenedMs > a.listenedMs ? 1 :
+          b.listenedMs < a.listenedMs ? -1 :
+            (a.trackId > b.trackId ? 1 : -1)
+      ));
+
+      let i = 0;
+      while (remainder > 0n && allocated.length > 0) {
+        allocated[i].pennies += 1n;
+        remainder -= 1n;
+        i = (i + 1) % allocated.length;
+      }
+
+      for (const a of allocated) {
+        trackAllocations.set(a.trackId, a.pennies);
+      }
+    }
+
+    const trackIds = trackRows.map((r) => r.trackId);
+    const topTracks = trackRows
+      .sort((a, b) => Number(b.listenedMs - a.listenedMs))
+      .slice(0, 5)
+      .map((r) => ({
+        trackId: r.trackId,
+        title: r.title,
+        primaryArtistName: r.primaryArtistName,
+        listenedMs: r.listenedMs.toString(),
+        playEvents: r.playEvents,
+        sharePercent: totalListeningMs > 0n
+          ? Number(((Number(r.listenedMs) / Number(totalListeningMs)) * 100).toFixed(1))
+          : 0,
+        allocatedPennies: (trackAllocations.get(r.trackId) || 0n).toString()
+      }));
+
+    // Build artist support from the listener allocations + active splits.
+    const artistSupport = new Map(); // artistName -> pennies(BigInt)
+
+    if (trackIds.length > 0) {
+      const splitsRes = await pool.query(
+        `SELECT sa.track_id, ss.contributor_name, ss.share_percent
+         FROM public.split_agreements sa
+         JOIN public.split_shares ss ON ss.agreement_id = sa.id
+         WHERE sa.status = 'ACTIVE'
+           AND sa.track_id = ANY($1::uuid[])`,
+        [trackIds]
+      );
+
+      const splitsByTrack = new Map();
+      for (const r of splitsRes.rows) {
+        const arr = splitsByTrack.get(r.track_id) || [];
+        arr.push({
+          contributorName: r.contributor_name,
+          sharePercent: Number(r.share_percent)
+        });
+        splitsByTrack.set(r.track_id, arr);
+      }
+
+      const primaryArtistByTrack = new Map(trackRows.map((r) => [r.trackId, r.primaryArtistName]));
+
+      for (const trackId of trackIds) {
+        const totalPennies = trackAllocations.get(trackId) || 0n;
+        if (totalPennies <= 0n) continue;
+
+        const splits = splitsByTrack.get(trackId) || [];
+        if (splits.length === 0) {
+          const fallbackName = primaryArtistByTrack.get(trackId) || "Unknown Artist";
+          artistSupport.set(fallbackName, (artistSupport.get(fallbackName) || 0n) + totalPennies);
+          continue;
+        }
+
+        let allocatedSum = 0n;
+        const contributors = splits.map((s) => {
+          const bp = toBasisPoints(s.sharePercent);
+          const pennies = allocByBp(totalPennies, bp);
+          allocatedSum += pennies;
+          return { ...s, bp, pennies };
+        });
+
+        let remainder = totalPennies - allocatedSum;
+        contributors.sort((a, b) => (b.bp > a.bp ? 1 : b.bp < a.bp ? -1 : (a.contributorName > b.contributorName ? 1 : -1)));
+
+        let j = 0;
+        while (remainder > 0n && contributors.length > 0) {
+          contributors[j].pennies += 1n;
+          remainder -= 1n;
+          j = (j + 1) % contributors.length;
+        }
+
+        for (const c of contributors) {
+          if (c.pennies <= 0n) continue;
+          artistSupport.set(c.contributorName, (artistSupport.get(c.contributorName) || 0n) + c.pennies);
+        }
+      }
+    }
+
+    const allocatedPennies = [...trackAllocations.values()].reduce((sum, p) => sum + p, 0n);
+
+    const topArtists = [...artistSupport.entries()]
+      .sort((a, b) => (b[1] > a[1] ? 1 : b[1] < a[1] ? -1 : 0))
+      .slice(0, 5)
+      .map(([name, pennies]) => ({
+        name,
+        amountPennies: pennies.toString(),
+        sharePercent: allocatedPennies > 0n
+          ? Number(((Number(pennies) / Number(allocatedPennies)) * 100).toFixed(1))
+          : 0
+      }));
+
+    const historyRes = await pool.query(
+      `SELECT
+         s.month_start,
+         s.amount_pennies,
+         COALESCE(SUM(pe.listened_ms), 0)::bigint AS listened_ms,
+         COUNT(pe.id)::bigint AS play_events,
+         COUNT(DISTINCT pe.track_id)::bigint AS distinct_tracks
+       FROM public.subscriptions s
+       LEFT JOIN public.play_events pe
+         ON pe.listener_user_id = s.listener_user_id
+        AND pe.month_start = s.month_start
+       WHERE s.listener_user_id = $1
+         AND s.month_start <= $2
+       GROUP BY s.month_start, s.amount_pennies
+       ORDER BY s.month_start DESC
+       LIMIT 6`,
+      [listenerUserId, month]
+    );
+
+    const history = historyRes.rows.map((r) => ({
+      monthStart: r.month_start,
+      subscriptionPennies: String(r.amount_pennies || 0),
+      allocatedPennies: String(r.amount_pennies || 0),
+      listenedMs: String(r.listened_ms || 0),
+      playEvents: Number(r.play_events || 0),
+      distinctTracks: Number(r.distinct_tracks || 0)
+    }));
+
+    return res.json({
+      month,
+      subscriptionPennies: subscriptionPennies.toString(),
+      allocatedPennies: allocatedPennies.toString(),
+      totalListeningMs: totalListeningMs.toString(),
+      totalPlayEvents,
+      distinctTracks: trackRows.length,
+      topTracks,
+      topArtists,
+      history
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load listener impact");
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));

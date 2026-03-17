@@ -99,3 +99,14 @@ export async function getDashboardSummary() {
   }
   return res.json();
 }
+
+// Fetch listener impact metrics for a month.
+export async function getListenerImpact(month) {
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+  const res = await authFetch(`/api/listener/impact${query}`);
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Failed to load listener impact");
+  }
+  return res.json();
+}
