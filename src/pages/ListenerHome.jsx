@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { getTracks } from "../services/api.js";
+import { useListenerPlayer } from "../context/ListenerPlayerContext.jsx";
 import "./ListenerHome.css";
 
 export default function ListenerHome() {
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const { currentTrack, isPlaying, startTrack } = useListenerPlayer();
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +48,13 @@ export default function ListenerHome() {
                 <div className="lh-cover">Album</div>
                 <div className="lh-title">{t.title}</div>
                 <div className="lh-artist">{t.primary_artist_name}</div>
-                <button className="lh-play" type="button">Play</button>
+                <button
+                  className="lh-play"
+                  type="button"
+                  onClick={() => startTrack(t)}
+                >
+                  {currentTrack?.id === t.id && isPlaying ? "Playing" : "Play"}
+                </button>
               </div>
             ))
           )}

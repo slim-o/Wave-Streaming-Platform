@@ -4,10 +4,12 @@ import dotenv from "dotenv";
 
 //temp to test it works as intended
 import multer from "multer";
+import path from "path";
 
 import { pool } from "./db.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { createStorageAdapterFromEnv } from "./storage/storage.js";
 
 dotenv.config();
 
@@ -17,6 +19,7 @@ app.use(cors());
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "Ps_XcibxJTQT4AYP5KItvoNpiIRSyPzpO5zivUJ1Hgg=";
+const storage = createStorageAdapterFromEnv();
 
 // File uploads stored in memory (temporary).
 // Will be replaced with persistent storage later.
@@ -42,9 +45,30 @@ function allocByBp(totalPennies, bp) {
 // - Expects "Authorization: Bearer <token>"
 // - Verifies signature and expiry
 // - Attaches { userId, role } to req.user
-function authenticate(req, res, next) {
+function extractToken(req, allowQuery = false) {
   const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (bearer) return bearer;
+  if (allowQuery && typeof req.query.token === "string" && req.query.token.length > 0) {
+    return req.query.token;
+  }
+  return null;
+}
+
+function authenticate(req, res, next) {
+  const token = extractToken(req, false);
+  if (!token) return res.status(401).send("Missing auth token");
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = { userId: payload.userId, role: payload.role };
+    return next();
+  } catch {
+    return res.status(401).send("Invalid or expired token");
+  }
+}
+
+function authenticateStream(req, res, next) {
+  const token = extractToken(req, true);
   if (!token) return res.status(401).send("Missing auth token");
   try {
     const payload = jwt.verify(token, JWT_SECRET);
@@ -179,6 +203,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
 app.post("/api/tracks", authenticate, requireRole("CREATOR"), upload.single("audio"), async (req, res) => {
   // Transaction ensures track, splits, and audio metadata are atomic
   const client = await pool.connect();
+  let uploadedObjectKey = null;
 
   try {
     // field extractions
@@ -229,6 +254,15 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR"), upload.single("aud
     );
 
     const trackId = trackRes.rows[0].id;
+    const ext = path.extname(req.file.originalname || "") || ".bin";
+    const objectKey = `tracks/${trackId}/original${ext.toLowerCase()}`;
+
+    await storage.putObject({
+      key: objectKey,
+      body: req.file.buffer,
+      contentType: req.file.mimetype || "application/octet-stream"
+    });
+    uploadedObjectKey = objectKey;
 
     // 2 - create split agreement
     const agreementRes = await client.query(
@@ -266,8 +300,8 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR"), upload.single("aud
         req.file.originalname,
         req.file.mimetype,
         req.file.size,
-        "local",
-        null // later: set to an uploads path OR S3 / cloud key
+        "minio",
+        objectKey
       ]
     );
 
@@ -275,6 +309,13 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR"), upload.single("aud
     return res.status(201).json({ trackId });
   } catch (e) {
     await client.query("ROLLBACK");
+    if (uploadedObjectKey) {
+      try {
+        await storage.deleteObject({ key: uploadedObjectKey });
+      } catch (cleanupErr) {
+        console.error("Failed to cleanup uploaded object after rollback", cleanupErr);
+      }
+    }
     console.error(e);
     return res.status(500).send("Database error");
   } finally {
@@ -644,6 +685,98 @@ app.get("/api/dashboard/summary", authenticate, requireRole("CREATOR"), async (r
   }
 });
 
+app.get("/api/tracks/:id/stream", authenticateStream, async (req, res) => {
+  const trackId = req.params.id;
+  const range = req.headers.range;
+
+  try {
+    const assetRes = await pool.query(
+      `SELECT mime_type, object_key, storage_provider
+       FROM public.audio_assets
+       WHERE track_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [trackId]
+    );
+
+    if (assetRes.rows.length === 0) return res.status(404).send("Audio asset not found");
+
+    const asset = assetRes.rows[0];
+    if (!asset.object_key) return res.status(404).send("Audio object key not found");
+    if (asset.storage_provider !== "minio") {
+      return res.status(500).send("Unsupported storage provider for stream");
+    }
+
+    const objectOut = await storage.getObjectStream({ key: asset.object_key, range });
+    const stream = objectOut.body;
+    if (!stream || typeof stream.pipe !== "function") {
+      return res.status(500).send("Invalid stream response");
+    }
+
+    res.setHeader("Accept-Ranges", objectOut.acceptRanges || "bytes");
+    res.setHeader("Content-Type", objectOut.contentType || asset.mime_type || "application/octet-stream");
+    if (objectOut.contentLength != null) {
+      res.setHeader("Content-Length", String(objectOut.contentLength));
+    }
+    if (objectOut.contentRange) {
+      res.setHeader("Content-Range", objectOut.contentRange);
+    }
+
+    res.status(objectOut.statusCode || 200);
+    stream.on("error", (err) => {
+      console.error("MinIO stream error", err);
+      if (!res.headersSent) res.status(500).end();
+    });
+    stream.pipe(res);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to stream track");
+  }
+});
+
+// Record a listener play event from playback sessions.
+app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, res) => {
+  try {
+    const { trackId, monthStart, listenedMs, playedAt } = req.body || {};
+
+    if (!trackId) return res.status(400).send("trackId is required");
+    if (!monthStart) return res.status(400).send("monthStart is required");
+    if (!/^\d{4}-\d{2}-01$/.test(monthStart)) {
+      return res.status(400).send("Invalid monthStart format. Use YYYY-MM-01");
+    }
+    if (!Number.isInteger(listenedMs)) {
+      return res.status(400).send("listenedMs must be an integer");
+    }
+    if (listenedMs < 10000) {
+      return res.status(400).send("listenedMs must be at least 10000");
+    }
+    if (playedAt && Number.isNaN(Date.parse(playedAt))) {
+      return res.status(400).send("playedAt must be a valid timestamp");
+    }
+
+    const trackCheck = await pool.query(
+      `SELECT id FROM public.tracks WHERE id = $1`,
+      [trackId]
+    );
+    if (trackCheck.rows.length === 0) {
+      return res.status(404).send("Track not found");
+    }
+
+    const insertRes = await pool.query(
+      `INSERT INTO public.play_events
+       (listener_user_id, track_id, month_start, listened_ms, played_at)
+       VALUES ($1, $2, $3, $4, COALESCE($5::timestamp, now()))
+       RETURNING id`,
+      [req.user.userId, trackId, monthStart, listenedMs, playedAt || null]
+    );
+
+    return res.status(201).json({ id: insertRes.rows[0].id });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to record play event");
+  }
+});
+
 // =====================================================
 // Listener Impact
 // =====================================================
@@ -867,4 +1000,13 @@ app.get("/api/listener/impact", authenticate, requireRole("LISTENER"), async (re
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+
+async function startServer() {
+  await storage.assertReady();
+  app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
+}
+
+startServer().catch((err) => {
+  console.error("Failed to start server", err);
+  process.exit(1);
+});

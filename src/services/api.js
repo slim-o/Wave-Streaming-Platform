@@ -110,3 +110,18 @@ export async function getListenerImpact(month) {
   }
   return res.json();
 }
+
+// Record a listener play session
+export async function postPlayEvent(payload, options = {}) {
+  const res = await authFetch("/api/play-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: Boolean(options.keepalive)
+  });
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Failed to record play event");
+  }
+  return res.json();
+}

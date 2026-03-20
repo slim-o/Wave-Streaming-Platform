@@ -103,7 +103,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  height: 64px;
+  min-height: 72px;
   background: #fff;
   border-top: 1px solid #eee;
   display: grid;
@@ -135,19 +135,37 @@
 .ls-player-center {
   display: grid;
   justify-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.ls-controls { display: flex; gap: 8px; align-items: center; }
-.ls-control { border: none; background: transparent; cursor: pointer; }
+.ls-controls { display: flex; gap: 12px; align-items: center; }
+.ls-control {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: #555;
+}
+
+.ls-control-icon {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: #222;
+}
+
 .ls-play {
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid #111;
   background: #111;
   color: #fff;
   cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .ls-progress {
@@ -155,20 +173,62 @@
   grid-template-columns: auto 1fr auto;
   gap: 8px;
   width: 100%;
-  max-width: 360px;
+  max-width: 440px;
   font-size: 10px;
   color: #666;
   align-items: center;
 }
 
-.ls-bar {
-  height: 4px;
-  background: #eee;
-  border-radius: 999px;
-  overflow: hidden;
+.ls-progress-mid {
+  display: grid;
+  gap: 6px;
 }
 
-.ls-bar-fill { width: 35%; height: 100%; background: #111; }
+.ls-seek {
+  width: 100%;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #111 0%,
+    #111 var(--seek-progress, 0%),
+    #e7e7e7 var(--seek-progress, 0%),
+    #e7e7e7 100%
+  );
+  outline: none;
+}
+
+.ls-seek::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid #111;
+  background: #111;
+  cursor: pointer;
+}
+
+.ls-seek::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: #e7e7e7;
+}
+
+.ls-seek::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: #111;
+}
+
+.ls-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid #111;
+  background: #111;
+  cursor: pointer;
+}
 
 .ls-player-right {
   display: flex;
@@ -186,6 +246,19 @@
 }
 
 .ls-vol-fill { width: 60%; height: 100%; background: #111; }
+
+.ls-saving {
+  position: fixed;
+  right: 12px;
+  bottom: 74px;
+  z-index: 30;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  font-size: 12px;
+  color: #444;
+}
 
 @media (max-width: 900px) {
   .ls-main { margin-left: 0; }

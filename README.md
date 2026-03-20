@@ -24,3 +24,10 @@ TO-DO:
             ?trackId=... (show one track’s breakdown)
             ?contributor=... or ?email=... (later map contributors to users)
     
+minIO storage solution
+
+mkdir C:\minio-data -Force
+$env:MINIO_ROOT_USER="minioadmin"
+$env:MINIO_ROOT_PASSWORD="minioadmin"
+$ennvnnnv:MINIO_REGION_NAME="us-east-1"
+& "$env:USERPROFILE\go\bin\minio.exe" server C:\minio-data --address ":9000" --console-address ":9001"
