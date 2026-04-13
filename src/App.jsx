@@ -16,6 +16,7 @@ import ListenerHome from "./pages/ListenerHome.jsx";
 import ListenerSearch from "./pages/ListenerSearch.jsx";
 import ListenerLibrary from "./pages/ListenerLibrary.jsx";
 import MyImpact from "./pages/MyImpact.jsx";
+import TrackEarnings from "./pages/TrackEarnings.jsx";
 //import MyImpact from "./pages/MyImpact.jsx";
 
 //import './App.css'
@@ -34,6 +35,7 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="tracks" element={<MyTracks />} />
         <Route path="tracks/new" element={<RegisterTrack />} />
+        <Route path="tracks/:id" element={<TrackEarnings />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="royalties" element={<Royalties />} />
         <Route path="collaborators" element={<Collaborators />} />

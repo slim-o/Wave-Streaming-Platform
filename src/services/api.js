@@ -125,3 +125,15 @@ export async function postPlayEvent(payload, options = {}) {
   }
   return res.json();
 }
+
+// Fetch a creator-scoped earnings breakdown for a specific track.
+export async function getTrackEarnings(trackId, month) {
+  if (!trackId) throw new Error("trackId is required");
+  const query = month ? `?month=${encodeURIComponent(month)}` : "";
+  const res = await authFetch(`/api/tracks/${encodeURIComponent(trackId)}/earnings${query}`);
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Failed to load track earnings");
+  }
+  return res.json();
+}

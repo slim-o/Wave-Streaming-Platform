@@ -10,6 +10,7 @@ import { pool } from "./db.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createStorageAdapterFromEnv } from "./storage/storage.js";
+import { appendLedgerEvent, appendLedgerEvents } from "./ledger/ledger.js";
 
 dotenv.config();
 
@@ -305,6 +306,20 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR"), upload.single("aud
       ]
     );
 
+    await appendLedgerEvent(client, {
+      occurredAt: new Date(),
+      eventType: "TRACK_REGISTERED",
+      actorUserId: req.user.userId,
+      entityType: "track",
+      entityId: trackId,
+      payload: {
+        title: title.trim(),
+        primaryArtistName: primaryArtist.trim(),
+        objectKey,
+        storageProvider: "minio"
+      }
+    });
+
     await client.query("COMMIT");
     return res.status(201).json({ trackId });
   } catch (e) {
@@ -363,6 +378,180 @@ app.get("/api/tracks", async (req, res) => {
   }
 });
 
+// Creator-only: detailed earnings breakdown for a single track + month.
+app.get("/api/tracks/:id/earnings", authenticate, requireRole("CREATOR"), async (req, res) => {
+  const trackId = req.params.id;
+  const requestedMonth = req.query.month;
+
+  if (requestedMonth && !/^\d{4}-\d{2}-01$/.test(String(requestedMonth))) {
+    return res.status(400).send("Invalid month format. Use YYYY-MM-01");
+  }
+
+  try {
+    const userId = req.user.userId;
+
+    const userRes = await pool.query(
+      `SELECT email
+       FROM public.users
+       WHERE id = $1`,
+      [userId]
+    );
+    const userEmail = String(userRes.rows[0]?.email || "").toLowerCase();
+
+    const trackRes = await pool.query(
+      `SELECT id, title, primary_artist_name, release_date, isrc, created_by_user_id
+       FROM public.tracks
+       WHERE id = $1`,
+      [trackId]
+    );
+    if (trackRes.rows.length === 0) return res.status(404).send("Track not found");
+    const track = trackRes.rows[0];
+
+    if (String(track.created_by_user_id) !== String(userId)) {
+      return res.status(403).send("Forbidden");
+    }
+
+    // Resolve month + runId
+    let monthStart = requestedMonth ? String(requestedMonth) : null;
+    let runId = null;
+
+    if (!monthStart) {
+      const latestRunRes = await pool.query(
+        `SELECT rr.id AS run_id, rr.month_start
+         FROM public.royalty_runs rr
+         JOIN public.royalty_allocations ra ON ra.run_id = rr.id
+         WHERE ra.track_id = $1
+         ORDER BY rr.month_start DESC
+         LIMIT 1`,
+        [trackId]
+      );
+      if (latestRunRes.rows.length > 0) {
+        runId = latestRunRes.rows[0].run_id;
+        monthStart = latestRunRes.rows[0].month_start;
+      }
+    } else {
+      const runRes = await pool.query(
+        `SELECT id
+         FROM public.royalty_runs
+         WHERE month_start = $1`,
+        [monthStart]
+      );
+      runId = runRes.rows[0]?.id || null;
+    }
+
+    // Play stats for this month (0 if no monthStart resolved)
+    let playStats = { playEvents: 0, listenedMs: "0", uniqueListeners: 0 };
+    if (monthStart) {
+      const playStatsRes = await pool.query(
+        `SELECT
+           COUNT(*)::bigint AS play_events,
+           COALESCE(SUM(listened_ms), 0)::bigint AS listened_ms,
+           COUNT(DISTINCT listener_user_id)::bigint AS unique_listeners
+         FROM public.play_events
+         WHERE track_id = $1
+           AND month_start = $2`,
+        [trackId, monthStart]
+      );
+      playStats = {
+        playEvents: Number(playStatsRes.rows[0]?.play_events || 0),
+        listenedMs: String(playStatsRes.rows[0]?.listened_ms || 0),
+        uniqueListeners: Number(playStatsRes.rows[0]?.unique_listeners || 0)
+      };
+    }
+
+    // Active splits for the track.
+    const splitsRes = await pool.query(
+      `SELECT ss.contributor_name, ss.contributor_role, ss.contributor_email, ss.share_percent
+       FROM public.split_agreements sa
+       JOIN public.split_shares ss ON ss.agreement_id = sa.id
+       WHERE sa.track_id = $1
+         AND sa.status = 'ACTIVE'
+       ORDER BY ss.share_percent DESC, ss.contributor_name ASC`,
+      [trackId]
+    );
+
+    const hasSplits = splitsRes.rows.length > 0;
+
+    // Allocation totals for (runId, trackId).
+    let trackTotalPennies = 0n;
+    const allocationByKey = new Map(); // name|role -> pennies(BigInt)
+
+    if (runId) {
+      const allocAggRes = await pool.query(
+        `SELECT
+           contributor_name,
+           contributor_role,
+           COALESCE(SUM(amount_pennies), 0)::bigint AS amount_pennies
+         FROM public.royalty_allocations
+         WHERE run_id = $1
+           AND track_id = $2
+         GROUP BY contributor_name, contributor_role`,
+        [runId, trackId]
+      );
+
+      for (const r of allocAggRes.rows) {
+        const pennies = BigInt(r.amount_pennies || 0);
+        trackTotalPennies += pennies;
+        allocationByKey.set(`${r.contributor_name}||${r.contributor_role}`, pennies);
+      }
+    }
+
+    let contributors = [];
+    if (!hasSplits) {
+      contributors = [
+        {
+          name: track.primary_artist_name,
+          role: "Primary Artist",
+          email: null,
+          sharePercent: 100,
+          earningsPennies: trackTotalPennies.toString(),
+          isYou: false
+        }
+      ];
+    } else {
+      contributors = splitsRes.rows.map((r) => {
+        const key = `${r.contributor_name}||${r.contributor_role}`;
+        const pennies = allocationByKey.get(key) || 0n;
+        const email = r.contributor_email ? String(r.contributor_email) : null;
+        const isYou = Boolean(email && userEmail && email.toLowerCase() === userEmail);
+        return {
+          name: r.contributor_name,
+          role: r.contributor_role,
+          email,
+          sharePercent: Number(r.share_percent),
+          earningsPennies: pennies.toString(),
+          isYou
+        };
+      });
+    }
+
+    const yourPennies = contributors.reduce((sum, c) => sum + (c.isYou ? BigInt(c.earningsPennies || 0) : 0n), 0n);
+    const hasYouMatch = contributors.some((c) => c.isYou);
+
+    return res.json({
+      track: {
+        id: track.id,
+        title: track.title,
+        primaryArtistName: track.primary_artist_name,
+        releaseDate: track.release_date,
+        isrc: track.isrc || null
+      },
+      monthStart,
+      runId,
+      playStats,
+      earnings: {
+        trackTotalPennies: trackTotalPennies.toString(),
+        yourPennies: yourPennies.toString(),
+        hasYouMatch
+      },
+      contributors
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load track earnings");
+  }
+});
+
 // =====================================================
 // Royalty Engine
 // =====================================================
@@ -388,6 +577,17 @@ app.post("/api/royalties/run", async (req, res) => {
       [month]
     );
     const runId = runRes.rows[0].id;
+
+    const ledgerEvents = [
+      {
+        occurredAt: new Date(),
+        eventType: "ROYALTY_RUN_EXECUTED",
+        actorUserId: null,
+        entityType: "royalty_run",
+        entityId: runId,
+        payload: { monthStart: month }
+      }
+    ];
 
     // 2 - Load subscriptions
     const subsRes = await client.query(
@@ -457,6 +657,7 @@ app.post("/api/royalties/run", async (req, res) => {
     if (trackIds.length === 0) {
       // clear allocations for this run and finish
       await client.query(`DELETE FROM public.royalty_allocations WHERE run_id = $1`, [runId]);
+      await appendLedgerEvents(client, ledgerEvents);
       await client.query("COMMIT");
       return res.json({ runId, month, message: "No listening/subscriptions to allocate." });
     }
@@ -510,12 +711,28 @@ app.post("/api/royalties/run", async (req, res) => {
           continue;
         }
 
-        await client.query(
+        const allocRes = await client.query(
           `INSERT INTO public.royalty_allocations
            (run_id, track_id, contributor_name, contributor_role, amount_pennies)
-           VALUES ($1, $2, $3, $4, $5)`,
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
           [runId, trackId, primaryArtist, "Primary Artist", totalPennies.toString()]
         );
+
+        ledgerEvents.push({
+          occurredAt: new Date(),
+          eventType: "ROYALTY_ALLOCATED",
+          actorUserId: null,
+          entityType: "royalty_allocation",
+          entityId: allocRes.rows[0].id,
+          payload: {
+            runId,
+            trackId,
+            contributorName: primaryArtist,
+            contributorRole: "Primary Artist",
+            amountPennies: totalPennies.toString()
+          }
+        });
 
         trackSummaries.push({
           trackId,
@@ -550,12 +767,28 @@ app.post("/api/royalties/run", async (req, res) => {
 
       for (const c of contribRows) {
         if (c.pennies <= 0n) continue;
-        await client.query(
+        const allocRes = await client.query(
           `INSERT INTO public.royalty_allocations
            (run_id, track_id, contributor_name, contributor_role, amount_pennies)
-           VALUES ($1, $2, $3, $4, $5)`,
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
           [runId, trackId, c.name, c.role, c.pennies.toString()]
         );
+
+        ledgerEvents.push({
+          occurredAt: new Date(),
+          eventType: "ROYALTY_ALLOCATED",
+          actorUserId: null,
+          entityType: "royalty_allocation",
+          entityId: allocRes.rows[0].id,
+          payload: {
+            runId,
+            trackId,
+            contributorName: c.name,
+            contributorRole: c.role,
+            amountPennies: c.pennies.toString()
+          }
+        });
       }
 
       trackSummaries.push({
@@ -566,6 +799,7 @@ app.post("/api/royalties/run", async (req, res) => {
       });
     }
 
+    await appendLedgerEvents(client, ledgerEvents);
     await client.query("COMMIT");
     res.json({ runId, month, tracksAllocated: trackSummaries.length, skippedTracks, trackSummaries });
   } catch (e) {
@@ -736,6 +970,7 @@ app.get("/api/tracks/:id/stream", authenticateStream, async (req, res) => {
 
 // Record a listener play event from playback sessions.
 app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, res) => {
+  const client = await pool.connect();
   try {
     const { trackId, monthStart, listenedMs, playedAt } = req.body || {};
 
@@ -754,7 +989,7 @@ app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, 
       return res.status(400).send("playedAt must be a valid timestamp");
     }
 
-    const trackCheck = await pool.query(
+    const trackCheck = await client.query(
       `SELECT id FROM public.tracks WHERE id = $1`,
       [trackId]
     );
@@ -762,7 +997,9 @@ app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, 
       return res.status(404).send("Track not found");
     }
 
-    const insertRes = await pool.query(
+    await client.query("BEGIN");
+
+    const insertRes = await client.query(
       `INSERT INTO public.play_events
        (listener_user_id, track_id, month_start, listened_ms, played_at)
        VALUES ($1, $2, $3, $4, COALESCE($5::timestamp, now()))
@@ -770,10 +1007,80 @@ app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, 
       [req.user.userId, trackId, monthStart, listenedMs, playedAt || null]
     );
 
-    return res.status(201).json({ id: insertRes.rows[0].id });
+    const playEventId = insertRes.rows[0].id;
+
+    await appendLedgerEvent(client, {
+      occurredAt: new Date(),
+      eventType: "PLAY_EVENT_RECORDED",
+      actorUserId: req.user.userId,
+      entityType: "play_event",
+      entityId: playEventId,
+      payload: { trackId, monthStart, listenedMs }
+    });
+
+    await client.query("COMMIT");
+    return res.status(201).json({ id: playEventId });
   } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore rollback errors
+    }
     console.error(e);
     return res.status(500).send("Failed to record play event");
+  } finally {
+    client.release();
+  }
+});
+
+// =====================================================
+// Ledger (Debug/Traceability)
+// =====================================================
+
+app.get("/api/ledger/events", authenticate, requireRole("CREATOR"), async (req, res) => {
+  const rawLimit = req.query.limit;
+  const rawCursor = req.query.cursor;
+
+  const limit = Math.max(1, Math.min(200, Number(rawLimit || 50)));
+  if (!Number.isFinite(limit)) return res.status(400).send("Invalid limit");
+
+  let cursor = null;
+  if (typeof rawCursor === "string" && rawCursor.length > 0) {
+    if (!/^\d+$/.test(rawCursor)) return res.status(400).send("Invalid cursor");
+    cursor = rawCursor;
+  }
+
+  try {
+    const params = [];
+    let sql = `SELECT
+        id,
+        occurred_at,
+        event_type,
+        actor_user_id,
+        entity_type,
+        entity_id,
+        payload,
+        chain_index,
+        prev_hash,
+        event_hash
+      FROM public.ledger_events`;
+
+    if (cursor) {
+      params.push(cursor);
+      sql += ` WHERE chain_index < $1::bigint`;
+    }
+
+    params.push(limit);
+    sql += ` ORDER BY chain_index DESC LIMIT $${params.length}`;
+
+    const r = await pool.query(sql, params);
+    const events = r.rows;
+    const nextCursor = events.length > 0 ? String(events[events.length - 1].chain_index) : null;
+
+    return res.json({ events, nextCursor });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load ledger events");
   }
 });
 

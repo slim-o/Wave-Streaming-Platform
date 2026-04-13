@@ -75,10 +75,9 @@ export default function MyTracks() {
                     <td>{formatDate(t.release_date)}</td>
                     <td>{formatDateTime(t.created_at)}</td>
                     <td>
-                      {/* add /tracks/:id later */}
-                      <button className="mt-btn-secondary" disabled>
+                      <Link className="mt-btn-secondary" to={`/tracks/${t.id}`}>
                         View
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 ))
