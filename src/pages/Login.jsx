@@ -28,6 +28,8 @@ export default function Login() {
       const me = await getMe();
       if (me.role === "LISTENER") {
         navigate("/listener", { replace: true });
+      } else if (me.role === "ADMIN") {
+        navigate("/admin/royalties", { replace: true });
       } else {
         navigate("/", { replace: true });
       }

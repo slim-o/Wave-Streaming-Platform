@@ -11,12 +11,14 @@ import Settings from "./pages/Settings.jsx";
 import RegisterTrack from "./pages/RegisterTrack.jsx";
 import Login from "./pages/Login.jsx";
 import RequireAuth from "./components/RequireAuth.jsx";
+import RequireRole from "./components/RequireRole.jsx";
 import ListenerLayout from "./layout/ListenerLayout.jsx";
 import ListenerHome from "./pages/ListenerHome.jsx";
 import ListenerSearch from "./pages/ListenerSearch.jsx";
 import ListenerLibrary from "./pages/ListenerLibrary.jsx";
 import MyImpact from "./pages/MyImpact.jsx";
 import TrackEarnings from "./pages/TrackEarnings.jsx";
+import AdminRoyalties from "./pages/AdminRoyalties.jsx";
 //import MyImpact from "./pages/MyImpact.jsx";
 
 //import './App.css'
@@ -29,7 +31,9 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={
         <RequireAuth>
-          <CreatorLayout />
+          <RequireRole allowed={["CREATOR", "ADMIN"]}>
+            <CreatorLayout />
+          </RequireRole>
         </RequireAuth>
       }>
         <Route index element={<Dashboard />} />
@@ -38,13 +42,16 @@ function App() {
         <Route path="tracks/:id" element={<TrackEarnings />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="royalties" element={<Royalties />} />
+        <Route path="admin/royalties" element={<AdminRoyalties />} />
         <Route path="collaborators" element={<Collaborators />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
       <Route path="/listener" element={
         <RequireAuth>
-          <ListenerLayout />
+          <RequireRole allowed={["LISTENER", "ADMIN"]}>
+            <ListenerLayout />
+          </RequireRole>
         </RequireAuth>
       }>
         <Route index element={<ListenerHome />} />

@@ -137,3 +137,26 @@ export async function getTrackEarnings(trackId, month) {
   }
   return res.json();
 }
+
+// Admin: run monthly royalty settlement.
+export async function runRoyalties(monthStart) {
+  if (!monthStart) throw new Error("monthStart is required (YYYY-MM-01)");
+  const res = await authFetch(`/api/royalties/run?month=${encodeURIComponent(monthStart)}`, {
+    method: "POST"
+  });
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Failed to run royalties");
+  }
+  return res.json();
+}
+
+// Admin: fetch recent royalty runs.
+export async function getAdminRoyaltyRuns(limit = 6) {
+  const res = await authFetch(`/api/admin/royalties/runs?limit=${encodeURIComponent(limit)}`);
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Failed to load runs");
+  }
+  return res.json();
+}

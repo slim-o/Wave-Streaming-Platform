@@ -82,7 +82,6 @@ function authenticateStream(req, res, next) {
 
 // Role-based authorization middleware.
 // Usage: requireRole("CREATOR", "LABEL")
-// Assumes authenticate() has already populated req.user.
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user?.role) return res.status(401).send("Unauthorized");
@@ -201,7 +200,7 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
 // =====================================================
 
 // Create new track with split agreement and audio metadata (CREATOR only)
-app.post("/api/tracks", authenticate, requireRole("CREATOR"), upload.single("audio"), async (req, res) => {
+app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.single("audio"), async (req, res) => {
   // Transaction ensures track, splits, and audio metadata are atomic
   const client = await pool.connect();
   let uploadedObjectKey = null;
@@ -379,7 +378,7 @@ app.get("/api/tracks", async (req, res) => {
 });
 
 // Creator-only: detailed earnings breakdown for a single track + month.
-app.get("/api/tracks/:id/earnings", authenticate, requireRole("CREATOR"), async (req, res) => {
+app.get("/api/tracks/:id/earnings", authenticate, requireRole("CREATOR", "ADMIN"), async (req, res) => {
   const trackId = req.params.id;
   const requestedMonth = req.query.month;
 
@@ -557,7 +556,7 @@ app.get("/api/tracks/:id/earnings", authenticate, requireRole("CREATOR"), async 
 // =====================================================
 
 // Execute monthly royalty allocation (user-centric distribution model)
-app.post("/api/royalties/run", async (req, res) => {
+app.post("/api/royalties/run", authenticate, requireRole("ADMIN"), async (req, res) => {
   const month = req.query.month; // expect "2026-02-01"
   if (!month) return res.status(400).send("Missing month query param (YYYY-MM-01)");
   if (!/^\d{4}-\d{2}-01$/.test(month)) {
@@ -883,7 +882,7 @@ app.get("/api/royalties/allocations", async (req, res) => {
 // =====================================================
 
 // Aggregate dashboard metrics for CREATOR
-app.get("/api/dashboard/summary", authenticate, requireRole("CREATOR"), async (req, res) => {
+app.get("/api/dashboard/summary", authenticate, requireRole("CREATOR", "ADMIN"), async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -916,6 +915,47 @@ app.get("/api/dashboard/summary", authenticate, requireRole("CREATOR"), async (r
   } catch (e) {
     console.error(e);
     return res.status(500).send("Database error");
+  }
+});
+
+// =====================================================
+// Admin
+// =====================================================
+
+// Admin: list recent royalty runs with aggregate counts.
+app.get("/api/admin/royalties/runs", authenticate, requireRole("ADMIN"), async (req, res) => {
+  const rawLimit = req.query.limit;
+  const limit = Math.max(1, Math.min(24, Number(rawLimit || 6)));
+  if (!Number.isFinite(limit)) return res.status(400).send("Invalid limit");
+
+  try {
+    const r = await pool.query(
+      `SELECT
+         rr.id AS run_id,
+         rr.month_start,
+         rr.executed_at,
+         COUNT(ra.id)::bigint AS allocation_count,
+         COUNT(DISTINCT ra.track_id)::bigint AS track_count
+       FROM public.royalty_runs rr
+       LEFT JOIN public.royalty_allocations ra ON ra.run_id = rr.id
+       GROUP BY rr.id, rr.month_start, rr.executed_at
+       ORDER BY rr.month_start DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    const runs = r.rows.map((row) => ({
+      runId: row.run_id,
+      monthStart: row.month_start,
+      executedAt: row.executed_at,
+      allocationCount: String(row.allocation_count || 0),
+      trackCount: String(row.track_count || 0)
+    }));
+
+    return res.json({ runs });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load royalty runs");
   }
 });
 
@@ -969,7 +1009,7 @@ app.get("/api/tracks/:id/stream", authenticateStream, async (req, res) => {
 });
 
 // Record a listener play event from playback sessions.
-app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, res) => {
+app.post("/api/play-events", authenticate, requireRole("LISTENER", "ADMIN"), async (req, res) => {
   const client = await pool.connect();
   try {
     const { trackId, monthStart, listenedMs, playedAt } = req.body || {};
@@ -1037,7 +1077,7 @@ app.post("/api/play-events", authenticate, requireRole("LISTENER"), async (req, 
 // Ledger (Debug/Traceability)
 // =====================================================
 
-app.get("/api/ledger/events", authenticate, requireRole("CREATOR"), async (req, res) => {
+app.get("/api/ledger/events", authenticate, requireRole("CREATOR", "ADMIN"), async (req, res) => {
   const rawLimit = req.query.limit;
   const rawCursor = req.query.cursor;
 
@@ -1089,7 +1129,7 @@ app.get("/api/ledger/events", authenticate, requireRole("CREATOR"), async (req, 
 // =====================================================
 
 // Returns month-level impact metrics for the authenticated listener.
-app.get("/api/listener/impact", authenticate, requireRole("LISTENER"), async (req, res) => {
+app.get("/api/listener/impact", authenticate, requireRole("LISTENER", "ADMIN"), async (req, res) => {
   const requestedMonth = req.query.month;
   if (requestedMonth && !/^\d{4}-\d{2}-01$/.test(requestedMonth)) {
     return res.status(400).send("Invalid month format. Use YYYY-MM-01");

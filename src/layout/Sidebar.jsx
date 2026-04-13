@@ -52,6 +52,23 @@ export default function Sidebar() {
             {i.label}
           </NavLink>
         ))}
+
+        {user?.role === "ADMIN" && (
+          <>
+            <NavLink
+              to="/admin/royalties"
+              className={({ isActive }) => (isActive ? "navItem active" : "navItem")}
+            >
+              Admin
+            </NavLink>
+            <NavLink
+              to="/listener"
+              className={({ isActive }) => (isActive ? "navItem active" : "navItem")}
+            >
+              Listener View
+            </NavLink>
+          </>
+        )}
       </nav>
 
       <div className="profile">
