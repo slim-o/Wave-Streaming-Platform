@@ -19,6 +19,7 @@ import ListenerLibrary from "./pages/ListenerLibrary.jsx";
 import MyImpact from "./pages/MyImpact.jsx";
 import TrackEarnings from "./pages/TrackEarnings.jsx";
 import AdminRoyalties from "./pages/AdminRoyalties.jsx";
+import TrackSplits from "./pages/TrackSplits.jsx";
 //import MyImpact from "./pages/MyImpact.jsx";
 
 //import './App.css'
@@ -40,6 +41,7 @@ function App() {
         <Route path="tracks" element={<MyTracks />} />
         <Route path="tracks/new" element={<RegisterTrack />} />
         <Route path="tracks/:id" element={<TrackEarnings />} />
+        <Route path="tracks/:id/splits" element={<TrackSplits />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="royalties" element={<Royalties />} />
         <Route path="admin/royalties" element={<AdminRoyalties />} />

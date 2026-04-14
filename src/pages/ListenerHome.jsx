@@ -45,7 +45,21 @@ export default function ListenerHome() {
           ) : (
             tracks.map((t) => (
               <div className="lh-card" key={t.id}>
-                <div className="lh-cover">Album</div>
+                <div className="lh-cover">
+                  {t.has_cover ? (
+                    <img
+                      className="lh-cover-img"
+                      src={`/api/tracks/${t.id}/cover`}
+                      alt={`${t.title} cover`}
+                      loading="lazy"
+                      onError={(e) => {
+                        // Hide broken images and fall back to placeholder.
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : null}
+                  <div className="lh-cover-fallback">Album</div>
+                </div>
                 <div className="lh-title">{t.title}</div>
                 <div className="lh-artist">{t.primary_artist_name}</div>
                 <button

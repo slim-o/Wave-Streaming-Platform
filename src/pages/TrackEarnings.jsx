@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { getTrackEarnings } from "../services/api.js";
+import { Link, NavLink, useParams } from "react-router-dom";
+import { exportTrackEarningsCsv, getTrackEarnings } from "../services/api.js";
 import "./TrackEarnings.css";
 
 function penniesToPoundsString(penniesBigInt) {
@@ -39,6 +39,10 @@ export default function TrackEarnings() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [monthInput, setMonthInput] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const monthStart = monthInput ? `${monthInput}-01` : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +66,35 @@ export default function TrackEarnings() {
     };
   }, [id]);
 
+  useEffect(() => {
+    // Initialize the month selector from the server-resolved month (latest run).
+    if (!data?.monthStart) return;
+    const d = new Date(data.monthStart);
+    if (Number.isNaN(d.getTime())) return;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    setMonthInput(`${yyyy}-${mm}`);
+  }, [data?.monthStart]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadForMonth() {
+      if (!monthStart) return;
+      try {
+        setErr("");
+        setLoading(true);
+        const r = await getTrackEarnings(id, monthStart);
+        if (!cancelled) setData(r);
+      } catch (e) {
+        if (!cancelled) setErr(e.message || "Failed to load track earnings");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadForMonth();
+    return () => { cancelled = true; };
+  }, [id, monthStart]);
+
   const computed = useMemo(() => {
     const trackTotalPennies = parsePennies(data?.earnings?.trackTotalPennies);
     const feePennies = trackTotalPennies / 10n; // illustrative 10% platform fee (UI-only)
@@ -81,19 +114,73 @@ export default function TrackEarnings() {
     <div className="te-page">
       <div className="te-header">
         <div>
-          <Link className="te-back" to="/royalties">
-            &larr; Back to monthly royalties
+          <Link className="te-back" to="/tracks">
+            &larr; Back to My Tracks
           </Link>
           <h1 className="te-title">
             {data?.track?.title ? `Earnings for ${data.track.title}` : "Track Earnings"}
-            {monthLabel ? ` — ${monthLabel}` : ""}
+            {monthLabel ? ` - ${monthLabel}` : ""}
           </h1>
           <p className="te-subtitle">Detailed breakdown of earnings and royalty allocation.</p>
         </div>
 
-        <button className="te-btn" disabled title="Sprint 3 Day 3">
-          Export this breakdown
-        </button>
+        <div className="te-actions">
+          <div className="te-month">
+            <label className="te-month-label" htmlFor="te-month">Month</label>
+            <input
+              id="te-month"
+              className="te-month-input"
+              type="month"
+              value={monthInput}
+              onChange={(e) => setMonthInput(e.target.value)}
+            />
+          </div>
+
+          <button
+            className="te-btn"
+            disabled={loading || exporting || !monthStart}
+            type="button"
+            onClick={async () => {
+              try {
+                setErr("");
+                setExporting(true);
+                const { blob, filename } = await exportTrackEarningsCsv(id, monthStart);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                setErr(e.message || "Failed to export CSV");
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </div>
+      </div>
+
+      <div className="te-tabs" role="tablist" aria-label="Track navigation">
+        <NavLink
+          end
+          to="."
+          relative="path"
+          className={({ isActive }) => (isActive ? "te-tab active" : "te-tab")}
+        >
+          Overview & Earnings
+        </NavLink>
+        <NavLink
+          to="splits"
+          relative="path"
+          className={({ isActive }) => (isActive ? "te-tab active" : "te-tab")}
+        >
+          Contributors & Splits
+        </NavLink>
       </div>
 
       {loading && <p>Loading…</p>}

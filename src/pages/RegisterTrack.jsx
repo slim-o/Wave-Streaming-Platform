@@ -22,6 +22,7 @@ export default function RegisterTrack() {
   const [releaseDate, setReleaseDate] = useState(""); // yyyy-mm-dd
   const [isrc, setIsrc] = useState("");
   const [audioFile, setAudioFile] = useState(null);
+  const [coverFile, setCoverFile] = useState(null);
 
   const [contributors, setContributors] = useState([emptyContributor()]);
 
@@ -66,6 +67,9 @@ export default function RegisterTrack() {
     if (!primaryArtist.trim()) errs.push("Primary artist is required.");
     if (!releaseDate) errs.push("Release date is required.");
     if (!audioFile) errs.push("Audio file is required.");
+    if (coverFile && !String(coverFile.type || "").toLowerCase().startsWith("image/")) {
+      errs.push("Cover art must be an image file.");
+    }
 
     if (contributors.length === 0) errs.push("At least one contributor is required.");
 
@@ -83,7 +87,7 @@ export default function RegisterTrack() {
     if (!splitIsValid) errs.push(`Total split must equal 100%. Current total: ${totalSplit.toFixed(2)}%.`);
 
     return errs;
-  }, [trackTitle, primaryArtist, releaseDate, audioFile, contributors, splitIsValid, totalSplit]);
+  }, [trackTitle, primaryArtist, releaseDate, audioFile, coverFile, contributors, splitIsValid, totalSplit]);
 
   const canSubmit = formErrors.length === 0 && !submitting;
 
@@ -131,6 +135,7 @@ export default function RegisterTrack() {
       fd.append("releaseDate", releaseDate);
       fd.append("isrc", isrc);
       fd.append("audio", audioFile);
+      if (coverFile) fd.append("cover", coverFile);
       fd.append("contributors", JSON.stringify(contributors));
 
       const token = localStorage.getItem("token");
@@ -228,6 +233,21 @@ export default function RegisterTrack() {
             {audioFile && (
               <small className="rt-help">
                 Selected: {audioFile.name} ({Math.round(audioFile.size / 1024)} KB)
+              </small>
+            )}
+          </label>
+
+          <label className="rt-label">
+            Cover Art (Optional)
+            <input
+              className="rt-input"
+              type="file"
+              accept="image/*"
+              onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
+            />
+            {coverFile && (
+              <small className="rt-help">
+                Selected: {coverFile.name} ({Math.round(coverFile.size / 1024)} KB)
               </small>
             )}
           </label>

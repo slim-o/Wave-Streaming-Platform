@@ -12,6 +12,30 @@
   margin-bottom: 18px;
 }
 
+.te-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.te-month {
+  display: grid;
+  gap: 6px;
+}
+
+.te-month-label {
+  font-size: 12px;
+  color: #334155;
+}
+
+.te-month-input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
 .te-back {
   display: inline-block;
   color: #334155;
@@ -41,8 +65,45 @@
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #0f172a;
+  cursor: pointer;
+  opacity: 1;
+}
+
+.te-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.6;
+}
+
+.te-btn:hover:not(:disabled) {
+  border-color: #94a3b8;
+}
+
+.te-tabs {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.te-tab {
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #334155;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.te-tab.active {
+  color: #0f172a;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
 }
 
 .te-error {

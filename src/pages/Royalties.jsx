@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getRoyaltiesAllocations } from "../services/api.js";
+import { exportRoyaltiesCsv, getRoyaltiesAllocations } from "../services/api.js";
 import "./Royalties.css";
 
 export default function Royalties() {
@@ -7,6 +7,7 @@ export default function Royalties() {
   const [monthInput, setMonthInput] = useState(getCurrentMonth());
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const monthStart = `${monthInput}-01`;
 
@@ -92,6 +93,32 @@ export default function Royalties() {
             value={monthInput}
             onChange={(e) => setMonthInput(e.target.value)}
           />
+          <button
+            className="ry-btn"
+            type="button"
+            disabled={loading || exporting}
+            onClick={async () => {
+              try {
+                setErr("");
+                setExporting(true);
+                const { blob, filename } = await exportRoyaltiesCsv(monthStart, "me");
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                setErr(e.message || "Failed to export CSV");
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
         </div>
       </div>
 
@@ -181,7 +208,7 @@ export default function Royalties() {
                 trackRows.map((t) => (
                   <tr key={t.trackId}>
                     <td>{t.trackId}</td>
-                    <td>{t.trackTitle || "—"}</td>
+                    <td>{t.trackTitle || "-"}</td>
                     <td>{formatMoney(t.totalPennies)}</td>
                     <td>{t.contributors}</td>
                   </tr>

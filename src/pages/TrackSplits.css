@@ -1,0 +1,242 @@
+.ts-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.ts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.ts-back {
+  display: inline-block;
+  color: #334155;
+  text-decoration: none;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.ts-back:hover { text-decoration: underline; }
+
+.ts-title { margin: 0; font-size: 26px; color: #0f172a; }
+.ts-subtitle { margin: 6px 0 0; color: #64748b; }
+
+.ts-tabs {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ts-tab {
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #334155;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ts-tab.active {
+  color: #0f172a;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.ts-error { color: #b91c1c; }
+.ts-muted { color: #64748b; margin: 0; }
+
+.ts-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px;
+  margin-top: 16px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.ts-card-title {
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.ts-table-wrap { overflow: auto; }
+
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ts-table th,
+.ts-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ts-table th {
+  color: #334155;
+  font-weight: 700;
+  background: #f8fafc;
+}
+
+.ts-btn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #0f172a;
+  background: #0f172a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ts-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.ts-btn-outline {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.ts-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ts-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ts-badge.pending {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+}
+
+.ts-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ts-subsection { margin-top: 14px; }
+.ts-subtitle2 { font-weight: 800; color: #0f172a; margin-bottom: 10px; }
+
+/* Modal */
+.ts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+}
+
+.ts-modal {
+  width: min(900px, calc(100vw - 24px));
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  padding: 16px;
+}
+
+.ts-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ts-modal-title {
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.ts-close {
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+  color: #475569;
+}
+
+.ts-modal-body { margin-top: 12px; }
+
+.ts-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.ts-ok { color: #166534; }
+.ts-bad { color: #b91c1c; }
+
+.ts-rows { margin-top: 12px; display: grid; gap: 10px; }
+
+.ts-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.6fr 1.3fr 36px;
+  gap: 10px;
+  align-items: center;
+}
+
+.ts-input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.ts-mini {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ts-modal-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 820px) {
+  .ts-row {
+    grid-template-columns: 1fr;
+  }
+}
+

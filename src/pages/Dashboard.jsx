@@ -64,7 +64,7 @@ function formatMoney(pennies) {
 }
 
 function formatMonth(s) {
-  if (!s) return "—";
+  if (!s) return "-";
   const d = new Date(s);
   return d.toLocaleDateString("en-GB", { year: "numeric", month: "short" });
 }

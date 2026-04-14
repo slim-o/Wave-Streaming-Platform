@@ -90,6 +90,36 @@ function requireRole(...roles) {
   };
 }
 
+function escapeCsvField(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replaceAll('"', '""')}"`;
+  }
+  return s;
+}
+
+function penniesToGbpString(pennies) {
+  let p;
+  try {
+    p = BigInt(pennies || 0);
+  } catch {
+    p = 0n;
+  }
+  const isNeg = p < 0n;
+  const abs = isNeg ? -p : p;
+  const pounds = abs / 100n;
+  const rest = abs % 100n;
+  const out = `${pounds.toString()}.${rest.toString().padStart(2, "0")}`;
+  return isNeg ? `-${out}` : out;
+}
+
+function normalizeEmail(email) {
+  if (!email) return null;
+  const s = String(email).trim().toLowerCase();
+  return s.length > 0 ? s : null;
+}
+
 // =====================================================
 // Health & Diagnostics
 // =====================================================
@@ -103,6 +133,35 @@ app.get("/api/health", (req, res) => {
 app.get("/api/db-check", async (req, res) => {
   const r = await pool.query("SELECT now() as now");
   res.json(r.rows[0]);
+});
+
+// Public: serve cover art for a track (if present).
+// This is intentionally unauthenticated so <img src="..."> can load it without attaching JWT headers.
+app.get("/api/tracks/:id/cover", async (req, res) => {
+  const trackId = req.params.id;
+  try {
+    const assetRes = await pool.query(
+      `SELECT object_key, mime_type
+       FROM public.cover_assets
+       WHERE track_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [trackId]
+    );
+    if (assetRes.rows.length === 0) return res.status(404).send("No cover art");
+
+    const { object_key: objectKey, mime_type: mimeType } = assetRes.rows[0];
+    const out = await storage.getObjectStream({ key: objectKey });
+
+    res.status(out.statusCode || 200);
+    res.setHeader("Content-Type", mimeType || out.contentType || "application/octet-stream");
+    if (out.contentLength != null) res.setHeader("Content-Length", String(out.contentLength));
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return out.body.pipe(res);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load cover art");
+  }
 });
 
 // =====================================================
@@ -200,19 +259,32 @@ app.get("/api/auth/me", authenticate, async (req, res) => {
 // =====================================================
 
 // Create new track with split agreement and audio metadata (CREATOR only)
-app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.single("audio"), async (req, res) => {
+app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
   // Transaction ensures track, splits, and audio metadata are atomic
   const client = await pool.connect();
   let uploadedObjectKey = null;
+  let uploadedCoverKey = null;
 
   try {
     // field extractions
     const { title, primaryArtist, releaseDate, isrc, contributors } = req.body;
 
+    const audioFile = req.files?.audio?.[0] || null;
+    const coverFile = req.files?.cover?.[0] || null;
+
     if (!title?.trim()) return res.status(400).send("Missing title");
     if (!primaryArtist?.trim()) return res.status(400).send("Missing primaryArtist");
     if (!releaseDate) return res.status(400).send("Missing releaseDate");
-    if (!req.file) return res.status(400).send("Missing audio file");
+    if (!audioFile) return res.status(400).send("Missing audio file");
+
+    if (coverFile) {
+      if (!String(coverFile.mimetype || "").toLowerCase().startsWith("image/")) {
+        return res.status(400).send("Cover must be an image");
+      }
+      if (Number(coverFile.size || 0) > 5 * 1024 * 1024) {
+        return res.status(400).send("Cover image is too large (max 5MB)");
+      }
+    }
 
     // parse contributors (sent as JSON string in FormData)
     let contributorsArr;
@@ -254,15 +326,27 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.si
     );
 
     const trackId = trackRes.rows[0].id;
-    const ext = path.extname(req.file.originalname || "") || ".bin";
-    const objectKey = `tracks/${trackId}/original${ext.toLowerCase()}`;
+    const audioExt = path.extname(audioFile.originalname || "") || ".bin";
+    const objectKey = `tracks/${trackId}/audio/original${audioExt.toLowerCase()}`;
 
     await storage.putObject({
       key: objectKey,
-      body: req.file.buffer,
-      contentType: req.file.mimetype || "application/octet-stream"
+      body: audioFile.buffer,
+      contentType: audioFile.mimetype || "application/octet-stream"
     });
     uploadedObjectKey = objectKey;
+
+    let coverObjectKey = null;
+    if (coverFile) {
+      const coverExt = path.extname(coverFile.originalname || "") || ".img";
+      coverObjectKey = `tracks/${trackId}/cover/original${coverExt.toLowerCase()}`;
+      await storage.putObject({
+        key: coverObjectKey,
+        body: coverFile.buffer,
+        contentType: coverFile.mimetype || "application/octet-stream"
+      });
+      uploadedCoverKey = coverObjectKey;
+    }
 
     // 2 - create split agreement
     const agreementRes = await client.query(
@@ -297,13 +381,29 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.si
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [
         trackId,
-        req.file.originalname,
-        req.file.mimetype,
-        req.file.size,
+        audioFile.originalname,
+        audioFile.mimetype,
+        audioFile.size,
         "minio",
         objectKey
       ]
     );
+
+    if (coverFile && coverObjectKey) {
+      await client.query(
+        `INSERT INTO public.cover_assets
+         (track_id, original_filename, mime_type, size_bytes, storage_provider, object_key)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          trackId,
+          coverFile.originalname,
+          coverFile.mimetype,
+          coverFile.size,
+          "minio",
+          coverObjectKey
+        ]
+      );
+    }
 
     await appendLedgerEvent(client, {
       occurredAt: new Date(),
@@ -315,6 +415,7 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.si
         title: title.trim(),
         primaryArtistName: primaryArtist.trim(),
         objectKey,
+        coverObjectKey,
         storageProvider: "minio"
       }
     });
@@ -330,6 +431,13 @@ app.post("/api/tracks", authenticate, requireRole("CREATOR", "ADMIN"), upload.si
         console.error("Failed to cleanup uploaded object after rollback", cleanupErr);
       }
     }
+    if (uploadedCoverKey) {
+      try {
+        await storage.deleteObject({ key: uploadedCoverKey });
+      } catch (cleanupErr) {
+        console.error("Failed to cleanup uploaded cover object after rollback", cleanupErr);
+      }
+    }
     console.error(e);
     return res.status(500).send("Database error");
   } finally {
@@ -342,6 +450,7 @@ app.get("/api/tracks", async (req, res) => {
   try {
     // later you can filter by created_by_user_id when auth exists
     const createdBy = req.query.createdBy;
+    const collaborations = req.query.collaborations;
     if (createdBy === "me") {
       const auth = req.headers.authorization || "";
       const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
@@ -355,19 +464,109 @@ app.get("/api/tracks", async (req, res) => {
       }
 
       const result = await pool.query(
-        `SELECT id, title, primary_artist_name, release_date, created_at
-         FROM tracks
-         WHERE created_by_user_id = $1
-         ORDER BY created_at DESC`,
+        `SELECT
+           t.id,
+           t.title,
+           t.primary_artist_name,
+           t.release_date,
+           t.created_at,
+           (ca.id IS NOT NULL) AS has_cover,
+           CASE WHEN scr.id IS NULL THEN 'ACTIVE' ELSE 'PENDING' END AS split_change_status,
+           scr.id AS pending_request_id
+         FROM public.tracks t
+         LEFT JOIN public.cover_assets ca ON ca.track_id = t.id
+         LEFT JOIN LATERAL (
+           SELECT id
+           FROM public.split_change_requests
+           WHERE track_id = t.id
+             AND status = 'PENDING'
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) scr ON true
+         WHERE t.created_by_user_id = $1
+         ORDER BY t.created_at DESC`,
         [userId]
       );
       return res.json({ tracks: result.rows });
     }
 
+    if (collaborations === "me") {
+      const auth = req.headers.authorization || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+      if (!token) return res.status(401).send("Missing auth token");
+      let userId;
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload.userId;
+      } catch {
+        return res.status(401).send("Invalid or expired token");
+      }
+
+      const emailRes = await pool.query(
+        `SELECT lower(email) AS email
+         FROM public.users
+         WHERE id = $1`,
+        [userId]
+      );
+      const userEmail = String(emailRes.rows[0]?.email || "").toLowerCase();
+      if (!userEmail) return res.json({ tracks: [] });
+
+      const result = await pool.query(
+        `SELECT
+           t.id,
+           t.title,
+           t.primary_artist_name,
+           t.release_date,
+           t.created_at,
+           (ca.id IS NOT NULL) AS has_cover,
+           CASE WHEN scr.id IS NULL THEN 'ACTIVE' ELSE 'PENDING' END AS split_change_status,
+           scr.id AS pending_request_id
+         FROM public.tracks t
+         LEFT JOIN public.cover_assets ca ON ca.track_id = t.id
+         LEFT JOIN LATERAL (
+           SELECT id
+           FROM public.split_change_requests
+           WHERE track_id = t.id
+             AND status = 'PENDING'
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) scr ON true
+         WHERE t.created_by_user_id IS DISTINCT FROM $1
+           AND (
+             EXISTS (
+               SELECT 1
+               FROM public.split_agreements sa
+               JOIN public.split_shares ss ON ss.agreement_id = sa.id
+               WHERE sa.track_id = t.id
+                 AND sa.status = 'ACTIVE'
+                 AND lower(ss.contributor_email) = $2
+             )
+             OR EXISTS (
+               SELECT 1
+               FROM public.split_change_requests scr2
+               JOIN public.split_change_shares scs ON scs.request_id = scr2.id
+               WHERE scr2.track_id = t.id
+                 AND scr2.status = 'PENDING'
+                 AND lower(scs.contributor_email) = $2
+             )
+           )
+         ORDER BY t.created_at DESC`,
+        [userId, userEmail]
+      );
+      return res.json({ tracks: result.rows });
+    }
+
     const result = await pool.query(
-      `SELECT id, title, primary_artist_name, release_date, created_at
-       FROM tracks
-       ORDER BY created_at DESC`
+      `SELECT
+         t.id,
+         t.title,
+         t.primary_artist_name,
+         t.release_date,
+         t.created_at,
+         (ca.id IS NOT NULL) AS has_cover
+       FROM public.tracks t
+       LEFT JOIN public.cover_assets ca ON ca.track_id = t.id
+       ORDER BY t.created_at DESC`
     );
 
     res.json({ tracks: result.rows });
@@ -406,8 +605,31 @@ app.get("/api/tracks/:id/earnings", authenticate, requireRole("CREATOR", "ADMIN"
     if (trackRes.rows.length === 0) return res.status(404).send("Track not found");
     const track = trackRes.rows[0];
 
-    if (String(track.created_by_user_id) !== String(userId)) {
-      return res.status(403).send("Forbidden");
+    const isAdmin = req.user.role === "ADMIN";
+    const isOwner = String(track.created_by_user_id) === String(userId);
+
+    if (!isAdmin && !isOwner) {
+      // Allow collaborators (by contributor_email) to view insights too.
+      const collabRes = await pool.query(
+        `SELECT
+           EXISTS (
+             SELECT 1
+             FROM public.split_agreements sa
+             JOIN public.split_shares ss ON ss.agreement_id = sa.id
+             WHERE sa.track_id = $1
+               AND sa.status = 'ACTIVE'
+               AND lower(ss.contributor_email) = $2
+           ) OR EXISTS (
+             SELECT 1
+             FROM public.split_change_requests scr
+             JOIN public.split_change_shares scs ON scs.request_id = scr.id
+             WHERE scr.track_id = $1
+               AND scr.status = 'PENDING'
+               AND lower(scs.contributor_email) = $2
+           ) AS ok`,
+        [trackId, userEmail]
+      );
+      if (!collabRes.rows[0]?.ok) return res.status(403).send("Forbidden");
     }
 
     // Resolve month + runId
@@ -548,6 +770,602 @@ app.get("/api/tracks/:id/earnings", authenticate, requireRole("CREATOR", "ADMIN"
   } catch (e) {
     console.error(e);
     return res.status(500).send("Failed to load track earnings");
+  }
+});
+
+// =====================================================
+// Split Changes (UC3)
+// =====================================================
+
+// Propose a split change for a track (owner or ADMIN).
+app.post("/api/tracks/:id/split-changes", authenticate, requireRole("CREATOR", "ADMIN"), async (req, res) => {
+  const trackId = req.params.id;
+  const shares = req.body?.shares;
+
+  if (!Array.isArray(shares) || shares.length === 0) {
+    return res.status(400).send("shares is required");
+  }
+
+  const normalizedShares = shares.map((s) => ({
+    name: String(s?.name || "").trim(),
+    role: String(s?.role || "").trim() || "Artist",
+    sharePercent: Number(s?.sharePercent),
+    email: normalizeEmail(s?.email)
+  }));
+
+  for (const s of normalizedShares) {
+    if (!s.name) return res.status(400).send("Each share must have a contributor name");
+    if (!Number.isFinite(s.sharePercent) || s.sharePercent < 0 || s.sharePercent > 100) {
+      return res.status(400).send("Each sharePercent must be a number between 0 and 100");
+    }
+  }
+
+  const total = normalizedShares.reduce((sum, s) => sum + s.sharePercent, 0);
+  if (Math.abs(total - 100) > 0.0001) {
+    return res.status(400).send(`Split total must equal 100. Current total: ${total}`);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const proposerEmailRes = await client.query(
+      `SELECT lower(email) AS email
+       FROM public.users
+       WHERE id = $1`,
+      [req.user.userId]
+    );
+    const proposerEmail = proposerEmailRes.rows[0]?.email || null;
+
+    const trackRes = await client.query(
+      `SELECT id, created_by_user_id, title
+       FROM public.tracks
+       WHERE id = $1`,
+      [trackId]
+    );
+    if (trackRes.rows.length === 0) return res.status(404).send("Track not found");
+
+    const track = trackRes.rows[0];
+    if (req.user.role !== "ADMIN" && String(track.created_by_user_id) !== String(req.user.userId)) {
+      return res.status(403).send("Forbidden");
+    }
+
+    const existingPending = await client.query(
+      `SELECT id
+       FROM public.split_change_requests
+       WHERE track_id = $1
+         AND status = 'PENDING'
+       LIMIT 1`,
+      [trackId]
+    );
+    if (existingPending.rows.length > 0) {
+      return res.status(409).send("A split change request is already pending for this track");
+    }
+
+    const requestRes = await client.query(
+      `INSERT INTO public.split_change_requests
+       (track_id, proposed_by_user_id, status)
+       VALUES ($1, $2, 'PENDING')
+       RETURNING id`,
+      [trackId, req.user.userId]
+    );
+    const requestId = requestRes.rows[0].id;
+    const now = new Date();
+
+    for (const s of normalizedShares) {
+      await client.query(
+        `INSERT INTO public.split_change_shares
+         (request_id, contributor_name, contributor_role, share_percent, contributor_email)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [requestId, s.name, s.role, s.sharePercent, s.email]
+      );
+    }
+
+    const distinctEmails = [...new Set(normalizedShares.map((s) => s.email).filter(Boolean))];
+    let matchedApproversCount = 0;
+    const ledgerEvents = [];
+    const createdApprovalUserIds = new Set();
+
+    if (distinctEmails.length > 0) {
+      const usersRes = await client.query(
+        `SELECT id, lower(email) AS email
+         FROM public.users
+         WHERE email IS NOT NULL
+           AND lower(email) = ANY($1::text[])
+           AND is_active = true`,
+        [distinctEmails]
+      );
+
+      for (const u of usersRes.rows) {
+        const autoApprove = String(u.id) === String(req.user.userId);
+        const approvalRes = await client.query(
+          `INSERT INTO public.split_change_approvals
+           (request_id, approver_user_id, approver_email, decision, decided_at)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
+          [requestId, u.id, u.email, autoApprove ? "APPROVED" : null, autoApprove ? now : null]
+        );
+        createdApprovalUserIds.add(String(u.id));
+
+        if (autoApprove) {
+          ledgerEvents.push({
+            occurredAt: now,
+            eventType: "SPLIT_CHANGE_APPROVED",
+            actorUserId: req.user.userId,
+            entityType: "split_change_approval",
+            entityId: approvalRes.rows[0].id,
+            payload: { requestId, trackId, decision: "APPROVED", approverUserId: u.id }
+          });
+        }
+      }
+
+      matchedApproversCount = usersRes.rows.length;
+    }
+
+    // The proposer is always treated as already-approved (even if their email is not in the proposed shares).
+    if (!createdApprovalUserIds.has(String(req.user.userId))) {
+      if (!proposerEmail) {
+        // Shouldn't happen in auth-ready schema, but keep it safe.
+        throw new Error("Proposer email is missing");
+      }
+
+      const proposerApprovalRes = await client.query(
+        `INSERT INTO public.split_change_approvals
+         (request_id, approver_user_id, approver_email, decision, decided_at)
+         VALUES ($1, $2, $3, 'APPROVED', $4)
+         RETURNING id`,
+        [requestId, req.user.userId, proposerEmail, now]
+      );
+
+      matchedApproversCount += 1;
+
+      ledgerEvents.push({
+        occurredAt: now,
+        eventType: "SPLIT_CHANGE_APPROVED",
+        actorUserId: req.user.userId,
+        entityType: "split_change_approval",
+        entityId: proposerApprovalRes.rows[0].id,
+        payload: { requestId, trackId, decision: "APPROVED", approverUserId: req.user.userId, auto: true }
+      });
+    }
+
+    await appendLedgerEvent(client, {
+      occurredAt: now,
+      eventType: "SPLIT_CHANGE_PROPOSED",
+      actorUserId: req.user.userId,
+      entityType: "split_change_request",
+      entityId: requestId,
+      payload: {
+        trackId,
+        trackTitle: track.title,
+        requiredApprovals: distinctEmails.length,
+        matchedApproversCount
+      }
+    });
+
+    // If all approvals are already satisfied (e.g., only the proposer was matched and auto-approved),
+    // apply the split change immediately so the track has an ACTIVE agreement.
+    const remainingRes = await client.query(
+      `SELECT COUNT(*)::bigint AS remaining
+       FROM public.split_change_approvals
+       WHERE request_id = $1
+         AND decision IS DISTINCT FROM 'APPROVED'`,
+      [requestId]
+    );
+    const remaining = Number(remainingRes.rows[0]?.remaining || 0);
+
+    let appliedAgreementId = null;
+
+    if (remaining === 0) {
+      await client.query(
+        `UPDATE public.split_agreements
+         SET status = 'DEPRECATED'
+         WHERE track_id = $1
+           AND status = 'ACTIVE'`,
+        [trackId]
+      );
+
+      const newAgreementRes = await client.query(
+        `INSERT INTO public.split_agreements (track_id, status)
+         VALUES ($1, 'ACTIVE')
+         RETURNING id`,
+        [trackId]
+      );
+      appliedAgreementId = newAgreementRes.rows[0].id;
+
+      for (const s of normalizedShares) {
+        await client.query(
+          `INSERT INTO public.split_shares
+           (agreement_id, contributor_name, contributor_role, share_percent, contributor_email)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [appliedAgreementId, s.name, s.role, s.sharePercent, s.email || null]
+        );
+      }
+
+      await client.query(
+        `UPDATE public.split_change_requests
+         SET status = 'APPROVED', decided_at = $1
+         WHERE id = $2`,
+        [now, requestId]
+      );
+
+      ledgerEvents.push({
+        occurredAt: now,
+        eventType: "SPLIT_APPLIED",
+        actorUserId: req.user.userId,
+        entityType: "split_agreement",
+        entityId: appliedAgreementId,
+        payload: { requestId, trackId, agreementId: appliedAgreementId, auto: true }
+      });
+    }
+
+    if (ledgerEvents.length > 0) {
+      await appendLedgerEvents(client, ledgerEvents);
+    }
+
+    await client.query("COMMIT");
+    return res.status(201).json({
+      requestId,
+      status: appliedAgreementId ? "APPROVED" : "PENDING",
+      requiredApprovals: distinctEmails.length,
+      matchedApproversCount,
+      agreementId: appliedAgreementId
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    if (e?.code === "23514" && e?.constraint === "ledger_events_event_type_check") {
+      return res.status(500).send(
+        "Ledger event type not allowed by DB constraint. Run server/sql/ledger_events_allow_split_change_events.sql on the same DB your API uses."
+      );
+    }
+    return res.status(500).send("Failed to propose split change");
+  } finally {
+    client.release();
+  }
+});
+
+// Get active splits and the latest pending split-change request for a track.
+app.get("/api/tracks/:id/splits", authenticate, async (req, res) => {
+  const trackId = req.params.id;
+
+  try {
+    const userRes = await pool.query(
+      `SELECT lower(email) AS email
+       FROM public.users
+       WHERE id = $1`,
+      [req.user.userId]
+    );
+    const userEmail = String(userRes.rows[0]?.email || "").toLowerCase();
+
+    const trackRes = await pool.query(
+      `SELECT id, title, created_by_user_id
+       FROM public.tracks
+       WHERE id = $1`,
+      [trackId]
+    );
+    if (trackRes.rows.length === 0) return res.status(404).send("Track not found");
+
+    const track = trackRes.rows[0];
+    const isOwner = String(track.created_by_user_id) === String(req.user.userId);
+    const isAdmin = req.user.role === "ADMIN";
+
+    // Active agreement + shares
+    const activeAgreementRes = await pool.query(
+      `SELECT id
+       FROM public.split_agreements
+       WHERE track_id = $1
+         AND status = 'ACTIVE'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [trackId]
+    );
+    const activeAgreementId = activeAgreementRes.rows[0]?.id || null;
+
+    const activeShares = activeAgreementId
+      ? (await pool.query(
+        `SELECT contributor_name, contributor_role, share_percent, contributor_email, created_at
+         FROM public.split_shares
+         WHERE agreement_id = $1
+         ORDER BY share_percent DESC, contributor_name ASC`,
+        [activeAgreementId]
+      )).rows
+      : [];
+
+    // Pending request (latest)
+    const pendingReqRes = await pool.query(
+      `SELECT id, status, proposed_by_user_id, created_at, decided_at
+       FROM public.split_change_requests
+       WHERE track_id = $1
+         AND status = 'PENDING'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [trackId]
+    );
+    const pending = pendingReqRes.rows[0] || null;
+
+    let pendingShares = [];
+    let pendingApprovals = [];
+
+    if (pending) {
+      pendingShares = (await pool.query(
+        `SELECT contributor_name, contributor_role, share_percent, contributor_email
+         FROM public.split_change_shares
+         WHERE request_id = $1
+         ORDER BY share_percent DESC, contributor_name ASC`,
+        [pending.id]
+      )).rows;
+
+      pendingApprovals = (await pool.query(
+        `SELECT id, approver_user_id, approver_email, decision, decided_at
+         FROM public.split_change_approvals
+         WHERE request_id = $1
+         ORDER BY approver_email ASC`,
+        [pending.id]
+      )).rows;
+    }
+
+    if (!isOwner && !isAdmin) {
+      // Collaborator visibility: must match contributor_email in ACTIVE shares or pending shares.
+      const canSee = await pool.query(
+        `SELECT
+           EXISTS (
+             SELECT 1
+             FROM public.split_shares ss
+             JOIN public.split_agreements sa ON sa.id = ss.agreement_id
+             WHERE sa.track_id = $1
+               AND sa.status = 'ACTIVE'
+               AND lower(ss.contributor_email) = $2
+           ) OR EXISTS (
+             SELECT 1
+             FROM public.split_change_requests scr
+             JOIN public.split_change_shares scs ON scs.request_id = scr.id
+             WHERE scr.track_id = $1
+               AND scr.status = 'PENDING'
+               AND lower(scs.contributor_email) = $2
+           ) AS ok`,
+        [trackId, userEmail]
+      );
+      if (!canSee.rows[0]?.ok) return res.status(403).send("Forbidden");
+    }
+
+    return res.json({
+      track: { id: track.id, title: track.title },
+      viewer: { role: req.user.role, isOwner, email: userEmail || null },
+      active: {
+        agreementId: activeAgreementId,
+        shares: activeShares
+      },
+      pending: pending ? {
+        requestId: pending.id,
+        status: pending.status,
+        proposedByUserId: pending.proposed_by_user_id,
+        createdAt: pending.created_at,
+        decidedAt: pending.decided_at,
+        shares: pendingShares,
+        approvals: pendingApprovals
+      } : null
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load splits");
+  }
+});
+
+// Respond to a split change request (approve/reject).
+// Convenience: if someone visits this in a browser, return a clear 405 instead of "Cannot GET ...".
+app.get("/api/split-changes/:requestId/respond", (req, res) => {
+  return res.status(405).send("Method Not Allowed. Use POST with JSON body { decision: \"APPROVED\"|\"REJECTED\" }.");
+});
+
+app.post("/api/split-changes/:requestId/respond", authenticate, async (req, res) => {
+  const requestId = req.params.requestId;
+  const decisionRaw = String(req.body?.decision || "").toUpperCase();
+  if (!["APPROVED", "REJECTED"].includes(decisionRaw)) {
+    return res.status(400).send("decision must be APPROVED or REJECTED");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const reqRes = await client.query(
+      `SELECT id, track_id, status
+       FROM public.split_change_requests
+       WHERE id = $1`,
+      [requestId]
+    );
+    if (reqRes.rows.length === 0) return res.status(404).send("Request not found");
+
+    const requestRow = reqRes.rows[0];
+    if (requestRow.status !== "PENDING") {
+      return res.status(409).send("Request is not pending");
+    }
+
+    const trackId = requestRow.track_id;
+    const isAdmin = req.user.role === "ADMIN";
+
+    let approvalsToUpdate = [];
+
+    if (isAdmin) {
+      const pendingApprovalsRes = await client.query(
+        `SELECT id, approver_user_id
+         FROM public.split_change_approvals
+         WHERE request_id = $1
+           AND decision IS NULL`,
+        [requestId]
+      );
+      approvalsToUpdate = pendingApprovalsRes.rows.map((r) => ({ id: r.id, approverUserId: r.approver_user_id }));
+    } else {
+      const approvalRes = await client.query(
+        `SELECT id, decision
+         FROM public.split_change_approvals
+         WHERE request_id = $1
+           AND approver_user_id = $2`,
+        [requestId, req.user.userId]
+      );
+      if (approvalRes.rows.length === 0) return res.status(403).send("Forbidden");
+      if (approvalRes.rows[0].decision) return res.status(409).send("Already responded");
+      approvalsToUpdate = [{ id: approvalRes.rows[0].id, approverUserId: req.user.userId }];
+    }
+
+    if (approvalsToUpdate.length === 0) {
+      return res.status(400).send("No pending approvals to update");
+    }
+
+    const now = new Date();
+    const ledgerEvents = [];
+
+    for (const a of approvalsToUpdate) {
+      await client.query(
+        `UPDATE public.split_change_approvals
+         SET decision = $1, decided_at = $2
+         WHERE id = $3`,
+        [decisionRaw, now, a.id]
+      );
+
+      ledgerEvents.push({
+        occurredAt: now,
+        eventType: decisionRaw === "APPROVED" ? "SPLIT_CHANGE_APPROVED" : "SPLIT_CHANGE_REJECTED",
+        actorUserId: req.user.userId,
+        entityType: "split_change_approval",
+        entityId: a.id,
+        payload: { requestId, trackId, decision: decisionRaw, approverUserId: a.approverUserId }
+      });
+    }
+
+    if (decisionRaw === "REJECTED") {
+      await client.query(
+        `UPDATE public.split_change_requests
+         SET status = 'REJECTED', decided_at = $1
+         WHERE id = $2`,
+        [now, requestId]
+      );
+
+      ledgerEvents.push({
+        occurredAt: now,
+        eventType: "SPLIT_CHANGE_REJECTED",
+        actorUserId: req.user.userId,
+        entityType: "split_change_request",
+        entityId: requestId,
+        payload: { requestId, trackId, status: "REJECTED" }
+      });
+
+      await appendLedgerEvents(client, ledgerEvents);
+      await client.query("COMMIT");
+      return res.json({ requestId, status: "REJECTED" });
+    }
+
+    // If all required approvals are approved, apply the split change.
+    const remainingRes = await client.query(
+      `SELECT COUNT(*)::bigint AS remaining
+       FROM public.split_change_approvals
+       WHERE request_id = $1
+         AND decision IS DISTINCT FROM 'APPROVED'`,
+      [requestId]
+    );
+    const remaining = Number(remainingRes.rows[0]?.remaining || 0);
+
+    if (remaining === 0) {
+      // Deactivate existing active agreements.
+      await client.query(
+        `UPDATE public.split_agreements
+         SET status = 'DEPRECATED'
+         WHERE track_id = $1
+           AND status = 'ACTIVE'`,
+        [trackId]
+      );
+
+      const newAgreementRes = await client.query(
+        `INSERT INTO public.split_agreements (track_id, status)
+         VALUES ($1, 'ACTIVE')
+         RETURNING id`,
+        [trackId]
+      );
+      const newAgreementId = newAgreementRes.rows[0].id;
+
+      const sharesRes = await client.query(
+        `SELECT contributor_name, contributor_role, share_percent, contributor_email
+         FROM public.split_change_shares
+         WHERE request_id = $1`,
+        [requestId]
+      );
+
+      for (const s of sharesRes.rows) {
+        await client.query(
+          `INSERT INTO public.split_shares
+           (agreement_id, contributor_name, contributor_role, share_percent, contributor_email)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newAgreementId, s.contributor_name, s.contributor_role, s.share_percent, s.contributor_email || null]
+        );
+      }
+
+      await client.query(
+        `UPDATE public.split_change_requests
+         SET status = 'APPROVED', decided_at = $1
+         WHERE id = $2`,
+        [now, requestId]
+      );
+
+      ledgerEvents.push({
+        occurredAt: now,
+        eventType: "SPLIT_APPLIED",
+        actorUserId: req.user.userId,
+        entityType: "split_agreement",
+        entityId: newAgreementId,
+        payload: { requestId, trackId, agreementId: newAgreementId }
+      });
+
+      await appendLedgerEvents(client, ledgerEvents);
+      await client.query("COMMIT");
+      return res.json({ requestId, status: "APPROVED", agreementId: newAgreementId });
+    }
+
+    await appendLedgerEvents(client, ledgerEvents);
+    await client.query("COMMIT");
+    return res.json({ requestId, status: "PENDING" });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    if (e?.code === "23514" && e?.constraint === "ledger_events_event_type_check") {
+      return res.status(500).send(
+        "Ledger event type not allowed by DB constraint. Run server/sql/ledger_events_allow_split_change_events.sql on the same DB your API uses."
+      );
+    }
+    return res.status(500).send("Failed to respond to split change");
+  } finally {
+    client.release();
+  }
+});
+
+// Inbox for pending split-change approvals for the current user.
+app.get("/api/split-changes/inbox", authenticate, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT
+         sca.id AS approval_id,
+         scr.id AS request_id,
+         scr.track_id,
+         t.title AS track_title,
+         scr.created_at,
+         scr.proposed_by_user_id,
+         u.display_name AS proposed_by_display_name,
+         u.email AS proposed_by_email
+       FROM public.split_change_approvals sca
+       JOIN public.split_change_requests scr ON scr.id = sca.request_id
+       JOIN public.tracks t ON t.id = scr.track_id
+       JOIN public.users u ON u.id = scr.proposed_by_user_id
+       WHERE sca.approver_user_id = $1
+         AND sca.decision IS NULL
+         AND scr.status = 'PENDING'
+       ORDER BY scr.created_at DESC`,
+      [req.user.userId]
+    );
+
+    return res.json({ inbox: r.rows });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to load inbox");
   }
 });
 
@@ -877,6 +1695,227 @@ app.get("/api/royalties/allocations", async (req, res) => {
   }
 });
 
+// Export monthly royalty allocations as CSV (creator-scoped by default; admin can export all).
+app.get("/api/royalties/export", authenticate, requireRole("CREATOR", "ADMIN"), async (req, res) => {
+  const month = req.query.month;
+  const requestedScope = (req.query.scope || "me").toString().toLowerCase();
+
+  if (!month) return res.status(400).send("Missing month query param (YYYY-MM-01)");
+  if (!/^\d{4}-\d{2}-01$/.test(String(month))) {
+    return res.status(400).send("Invalid month format. Use YYYY-MM-01");
+  }
+
+  const scope = req.user.role === "ADMIN" ? (requestedScope === "all" ? "all" : "me") : "me";
+
+  try {
+    const runRes = await pool.query(
+      `SELECT id
+       FROM public.royalty_runs
+       WHERE month_start = $1`,
+      [month]
+    );
+
+    const runId = runRes.rows[0]?.id || null;
+    const header = [
+      "month_start",
+      "run_id",
+      "track_id",
+      "track_title",
+      "contributor_name",
+      "contributor_role",
+      "amount_pennies",
+      "amount_gbp",
+      "allocation_created_at"
+    ].join(",");
+
+    if (!runId) {
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="royalties_${month}_${scope}.csv"`);
+      return res.status(200).send(`${header}\n`);
+    }
+
+    let q;
+    let params;
+
+    if (scope === "me") {
+      q = `SELECT
+          $1::date AS month_start,
+          ra.run_id,
+          ra.track_id,
+          t.title AS track_title,
+          ra.contributor_name,
+          ra.contributor_role,
+          ra.amount_pennies,
+          ra.created_at AS allocation_created_at
+        FROM public.royalty_allocations ra
+        JOIN public.tracks t ON t.id = ra.track_id
+        WHERE ra.run_id = $2
+          AND t.created_by_user_id = $3
+        ORDER BY t.title ASC, ra.contributor_name ASC`;
+      params = [month, runId, req.user.userId];
+    } else {
+      q = `SELECT
+          $1::date AS month_start,
+          ra.run_id,
+          ra.track_id,
+          t.title AS track_title,
+          ra.contributor_name,
+          ra.contributor_role,
+          ra.amount_pennies,
+          ra.created_at AS allocation_created_at
+        FROM public.royalty_allocations ra
+        JOIN public.tracks t ON t.id = ra.track_id
+        WHERE ra.run_id = $2
+        ORDER BY t.title ASC, ra.contributor_name ASC`;
+      params = [month, runId];
+    }
+
+    const rowsRes = await pool.query(q, params);
+
+    const lines = [header];
+    for (const r of rowsRes.rows) {
+      lines.push([
+        escapeCsvField(r.month_start),
+        escapeCsvField(r.run_id),
+        escapeCsvField(r.track_id),
+        escapeCsvField(r.track_title),
+        escapeCsvField(r.contributor_name),
+        escapeCsvField(r.contributor_role),
+        escapeCsvField(r.amount_pennies),
+        escapeCsvField(penniesToGbpString(r.amount_pennies)),
+        escapeCsvField(r.allocation_created_at)
+      ].join(","));
+    }
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="royalties_${month}_${scope}.csv"`);
+    return res.status(200).send(`${lines.join("\n")}\n`);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to export royalties");
+  }
+});
+
+// Export monthly allocations for a single track as CSV.
+app.get("/api/tracks/:id/export", authenticate, requireRole("CREATOR", "ADMIN"), async (req, res) => {
+  const trackId = req.params.id;
+  const month = req.query.month;
+  if (!month) return res.status(400).send("Missing month query param (YYYY-MM-01)");
+  if (!/^\d{4}-\d{2}-01$/.test(String(month))) {
+    return res.status(400).send("Invalid month format. Use YYYY-MM-01");
+  }
+
+  try {
+    const userEmailRes = await pool.query(
+      `SELECT lower(email) AS email
+       FROM public.users
+       WHERE id = $1`,
+      [req.user.userId]
+    );
+    const userEmail = String(userEmailRes.rows[0]?.email || "").toLowerCase();
+
+    const trackRes = await pool.query(
+      `SELECT id, title, created_by_user_id
+       FROM public.tracks
+       WHERE id = $1`,
+      [trackId]
+    );
+    if (trackRes.rows.length === 0) return res.status(404).send("Track not found");
+
+    const track = trackRes.rows[0];
+    const isAdmin = req.user.role === "ADMIN";
+    const isOwner = String(track.created_by_user_id) === String(req.user.userId);
+
+    if (!isAdmin && !isOwner) {
+      const collabRes = await pool.query(
+        `SELECT
+           EXISTS (
+             SELECT 1
+             FROM public.split_agreements sa
+             JOIN public.split_shares ss ON ss.agreement_id = sa.id
+             WHERE sa.track_id = $1
+               AND sa.status = 'ACTIVE'
+               AND lower(ss.contributor_email) = $2
+           ) OR EXISTS (
+             SELECT 1
+             FROM public.split_change_requests scr
+             JOIN public.split_change_shares scs ON scs.request_id = scr.id
+             WHERE scr.track_id = $1
+               AND scr.status = 'PENDING'
+               AND lower(scs.contributor_email) = $2
+           ) AS ok`,
+        [trackId, userEmail]
+      );
+      if (!collabRes.rows[0]?.ok) return res.status(403).send("Forbidden");
+    }
+
+    const runRes = await pool.query(
+      `SELECT id
+       FROM public.royalty_runs
+       WHERE month_start = $1`,
+      [month]
+    );
+    const runId = runRes.rows[0]?.id || null;
+
+    const header = [
+      "month_start",
+      "run_id",
+      "track_id",
+      "track_title",
+      "contributor_name",
+      "contributor_role",
+      "amount_pennies",
+      "amount_gbp",
+      "allocation_created_at"
+    ].join(",");
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="track_${trackId}_${month}.csv"`);
+
+    if (!runId) {
+      return res.status(200).send(`${header}\n`);
+    }
+
+    const allocRes = await pool.query(
+      `SELECT
+         $1::date AS month_start,
+         ra.run_id,
+         ra.track_id,
+         t.title AS track_title,
+         ra.contributor_name,
+         ra.contributor_role,
+         ra.amount_pennies,
+         ra.created_at AS allocation_created_at
+       FROM public.royalty_allocations ra
+       JOIN public.tracks t ON t.id = ra.track_id
+       WHERE ra.run_id = $2
+         AND ra.track_id = $3
+       ORDER BY ra.contributor_name ASC`,
+      [month, runId, trackId]
+    );
+
+    const lines = [header];
+    for (const r of allocRes.rows) {
+      lines.push([
+        escapeCsvField(r.month_start),
+        escapeCsvField(r.run_id),
+        escapeCsvField(r.track_id),
+        escapeCsvField(r.track_title),
+        escapeCsvField(r.contributor_name),
+        escapeCsvField(r.contributor_role),
+        escapeCsvField(r.amount_pennies),
+        escapeCsvField(penniesToGbpString(r.amount_pennies)),
+        escapeCsvField(r.allocation_created_at)
+      ].join(","));
+    }
+
+    return res.status(200).send(`${lines.join("\n")}\n`);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Failed to export track earnings");
+  }
+});
+
 // =====================================================
 // Dashboard
 // =====================================================
@@ -956,6 +1995,76 @@ app.get("/api/admin/royalties/runs", authenticate, requireRole("ADMIN"), async (
   } catch (e) {
     console.error(e);
     return res.status(500).send("Failed to load royalty runs");
+  }
+});
+
+// Admin: generate/overwrite monthly subscriptions for all active users.
+app.post("/api/admin/subscriptions/generate", authenticate, requireRole("ADMIN"), async (req, res) => {
+  const { monthStart, amountPennies } = req.body || {};
+  if (!monthStart) return res.status(400).send("monthStart is required (YYYY-MM-01)");
+  if (!/^\d{4}-\d{2}-01$/.test(String(monthStart))) {
+    return res.status(400).send("Invalid monthStart format. Use YYYY-MM-01");
+  }
+
+  const n = typeof amountPennies === "string" ? Number(amountPennies) : amountPennies;
+  if (!Number.isInteger(n)) return res.status(400).send("amountPennies must be an integer");
+  if (n < 0) return res.status(400).send("amountPennies must be >= 0");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const upsertRes = await client.query(
+      `INSERT INTO public.subscriptions (listener_user_id, month_start, amount_pennies)
+       SELECT u.id, $1::date, $2::bigint
+       FROM public.users u
+       WHERE u.is_active = true
+       ON CONFLICT (listener_user_id, month_start)
+       DO UPDATE SET amount_pennies = EXCLUDED.amount_pennies
+       RETURNING id, listener_user_id, (xmax = 0) AS inserted`,
+      [String(monthStart), n]
+    );
+
+    let insertedCount = 0;
+    let updatedCount = 0;
+    const events = [];
+
+    for (const row of upsertRes.rows) {
+      if (row.inserted) insertedCount += 1;
+      else updatedCount += 1;
+
+      events.push({
+        occurredAt: new Date(),
+        eventType: "SUBSCRIPTION_CREATED",
+        actorUserId: req.user.userId,
+        entityType: "subscription",
+        entityId: row.id,
+        payload: {
+          monthStart: String(monthStart),
+          amountPennies: String(n),
+          inserted: Boolean(row.inserted),
+          listenerUserId: row.listener_user_id
+        }
+      });
+    }
+
+    if (events.length > 0) {
+      await appendLedgerEvents(client, events);
+    }
+
+    await client.query("COMMIT");
+    return res.json({
+      monthStart: String(monthStart),
+      amountPennies: String(n),
+      insertedCount,
+      updatedCount
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    return res.status(500).send("Failed to generate subscriptions");
+  } finally {
+    client.release();
   }
 });
 
