@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import ListenerSidebar from "./ListenerSidebar.jsx";
-import { getMe, postPlayEvent } from "../services/api.js";
+import { apiUrl, getMe, postPlayEvent } from "../services/api.js";
 import ProfileModal from "../components/ProfileModal.jsx";
 import { ListenerPlayerProvider } from "../context/ListenerPlayerContext.jsx";
 import "./listenerLayout.css";
@@ -124,11 +124,12 @@ export default function ListenerLayout() {
     ensureSession(track);
 
     const token = localStorage.getItem("token");
-    const src = token
+    const srcPath = token
       ? `/api/tracks/${track.id}/stream?token=${encodeURIComponent(token)}`
       : `/api/tracks/${track.id}/stream`;
+    const src = apiUrl(srcPath);
 
-    if (audio.src !== window.location.origin + src) {
+    if (audio.src !== src) {
       audio.src = src;
       audio.load();
     }

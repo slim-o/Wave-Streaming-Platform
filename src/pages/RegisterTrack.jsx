@@ -4,6 +4,7 @@ SUCCESS Modal to appear when track uploads successfully
 */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiUrl } from "../services/api.js";
 import "./RegisterTrack.css";
 
 const DRAFT_KEY = "wave.registerTrack.draft.v1";
@@ -139,7 +140,7 @@ export default function RegisterTrack() {
       fd.append("contributors", JSON.stringify(contributors));
 
       const token = localStorage.getItem("token");
-      const res = await fetch("/api/tracks", {
+      const res = await fetch(apiUrl("/api/tracks"), {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd

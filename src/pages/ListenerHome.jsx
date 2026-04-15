@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getTracks } from "../services/api.js";
+import { apiUrl, getTracks } from "../services/api.js";
 import { useListenerPlayer } from "../context/ListenerPlayerContext.jsx";
 import "./ListenerHome.css";
 
@@ -49,7 +49,9 @@ export default function ListenerHome() {
                   {t.has_cover ? (
                     <img
                       className="lh-cover-img"
-                      src={`/api/tracks/${t.id}/cover`}
+                      // Production uses VITE_API_BASE_URL; local dev uses the Vite proxy.
+                      // apiUrl() keeps both working.
+                      src={apiUrl(`/api/tracks/${t.id}/cover`)}
                       alt={`${t.title} cover`}
                       loading="lazy"
                       onError={(e) => {

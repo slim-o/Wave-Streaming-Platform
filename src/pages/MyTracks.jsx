@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getCollaborationTracks, getTracks } from "../services/api.js";
+import { apiUrl, getCollaborationTracks, getTracks } from "../services/api.js";
 import "./MyTracks.css";
 
 // NEED TO FILTER IT BASED ON CURRENT USER
@@ -90,7 +90,7 @@ export default function MyTracks() {
                             {t.has_cover ? (
                               <img
                                 className="mt-thumb"
-                                src={`/api/tracks/${t.id}/cover`}
+                                src={apiUrl(`/api/tracks/${t.id}/cover`)}
                                 alt=""
                                 loading="lazy"
                                 onError={(e) => { e.currentTarget.style.display = "none"; }}
@@ -151,7 +151,7 @@ export default function MyTracks() {
                             {t.has_cover ? (
                               <img
                                 className="mt-thumb"
-                                src={`/api/tracks/${t.id}/cover`}
+                                src={apiUrl(`/api/tracks/${t.id}/cover`)}
                                 alt=""
                                 loading="lazy"
                                 onError={(e) => { e.currentTarget.style.display = "none"; }}

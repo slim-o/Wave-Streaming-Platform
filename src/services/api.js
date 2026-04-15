@@ -5,15 +5,24 @@
 
 // ----- Utilities -----
 
+export const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+
 function getToken() {
   return localStorage.getItem("token");
+}
+
+export function apiUrl(path) {
+  const p = String(path || "");
+  if (/^https?:\/\//i.test(p)) return p;
+  if (!p.startsWith("/")) throw new Error(`apiUrl() expects an absolute path starting with "/". Got: ${p}`);
+  return API_BASE_URL ? `${API_BASE_URL}${p}` : p;
 }
 
 async function authFetch(url, options = {}) {
   const token = getToken();
   const headers = { ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(apiUrl(url), { ...options, headers });
   return res;
 }
 
@@ -21,14 +30,14 @@ async function authFetch(url, options = {}) {
 
 // Health check (no auth required)
 export async function getHealth() {
-  const res = await fetch("/api/health");
+  const res = await fetch(apiUrl("/api/health"));
   if (!res.ok) throw new Error("Health check failed");
   return res.json();
 }
 
 // Authenticate user and receive JWT
 export async function login(email, password) {
-  const res = await fetch("/api/auth/login", {
+  const res = await fetch(apiUrl("/api/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
@@ -42,7 +51,7 @@ export async function login(email, password) {
 
 // Create new user account
 export async function registerUser({ email, password, displayName, role }) {
-  const res = await fetch("/api/auth/register", {
+  const res = await fetch(apiUrl("/api/auth/register"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, displayName, role })
