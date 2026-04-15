@@ -131,8 +131,19 @@ app.get("/api/health", (req, res) => {
 
 // Verifies database connectivity
 app.get("/api/db-check", async (req, res) => {
-  const r = await pool.query("SELECT now() as now");
-  res.json(r.rows[0]);
+  try {
+    const r = await pool.query("SELECT now() as now");
+    res.json(r.rows[0]);
+  } catch (e) {
+    console.error("db-check failed", e);
+    // Minimal for debugging
+    res.status(500).json({
+      ok: false,
+      message: "Database check failed",
+      error: e?.message || String(e),
+      code: e?.code || null
+    });
+  }
 });
 
 // Public: serve cover art for a track (if present).
