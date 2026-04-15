@@ -53,12 +53,12 @@ export default function ListenerHome() {
                       alt={`${t.title} cover`}
                       loading="lazy"
                       onError={(e) => {
-                        // Hide broken images and fall back to placeholder.
+                        // Hide broken images
                         e.currentTarget.style.display = "none";
                       }}
                     />
                   ) : null}
-                  <div className="lh-cover-fallback">Album</div>
+                  <div className="lh-cover-fallback"></div>
                 </div>
                 <div className="lh-title">{t.title}</div>
                 <div className="lh-artist">{t.primary_artist_name}</div>

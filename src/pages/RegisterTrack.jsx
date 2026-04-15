@@ -115,7 +115,7 @@ export default function RegisterTrack() {
     };
 
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    window.alert("Draft saved (audio file is not saved in draft).");
+    window.alert("Draft saved (track details only...).");
   }
 
   async function handleSubmit(e) {
