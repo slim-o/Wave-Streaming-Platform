@@ -350,7 +350,7 @@ export default function ListenerLayout() {
         <header className="ls-header">
           <div className="ls-logo">WAVE</div>
           <div className="ls-search">
-            <span className="ls-search-icon">S</span>
+            <span className="ls-search-icon">🔍</span>
             <input
               className="ls-search-input"
               placeholder="Search songs, artists, playlists..."
