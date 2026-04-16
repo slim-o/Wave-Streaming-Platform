@@ -391,7 +391,23 @@ export default function ListenerLayout() {
 
         <div className="ls-player">
           <div className="ls-player-left">
-            <div className="ls-cover">Album</div>
+            <div className="ls-cover" aria-hidden="true">
+              {currentTrack?.has_cover ? (
+                <img
+                  className="ls-cover-img"
+                  // Production uses VITE_API_BASE_URL; local dev uses the Vite proxy.
+                  // apiUrl() keeps both working.
+                  src={apiUrl(`/api/tracks/${currentTrack.id}/cover`)}
+                  alt=""
+                  loading="lazy"
+                  onError={(e) => {
+                    // Fall back to the placeholder if the cover can't be loaded.
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+              ) : null}
+              <div className="ls-cover-fallback">Album</div>
+            </div>
             <div>
               <div className="ls-track-title">{currentTrack?.title || "Select a track"}</div>
               <div className="ls-track-artist">{currentTrack?.primary_artist_name || "Artist"}</div>

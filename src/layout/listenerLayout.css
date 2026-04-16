@@ -124,9 +124,26 @@
   height: 40px;
   border-radius: 8px;
   background: #ddd;
+  position: relative;
+  overflow: hidden;
+  font-size: 10px;
+}
+
+.ls-cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ls-cover-fallback {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
   font-size: 10px;
+  color: #666;
 }
 
 .ls-track-title { font-size: 12px; font-weight: 600; }
