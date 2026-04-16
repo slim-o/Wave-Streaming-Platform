@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import ListenerSidebar from "./ListenerSidebar.jsx";
 import { apiUrl, getMe, postPlayEvent } from "../services/api.js";
 import ProfileModal from "../components/ProfileModal.jsx";
@@ -9,6 +9,7 @@ import "./listenerLayout.css";
 export default function ListenerLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [user, setUser] = useState(null);
@@ -20,6 +21,7 @@ export default function ListenerLayout() {
   const [isFlushing, setIsFlushing] = useState(false);
   const [queueTracks, setQueueTracks] = useState([]);
   const [queueIndex, setQueueIndex] = useState(-1);
+  const [searchText, setSearchText] = useState("");
 
   const audioRef = useRef(null);
   const sessionRef = useRef(null);
@@ -234,6 +236,13 @@ export default function ListenerLayout() {
     return () => { cancelled = true; };
   }, []);
 
+  // Keep the header search box synced with the Search page query string.
+  useEffect(() => {
+    if (!location.pathname.startsWith("/listener/search")) return;
+    const q = (searchParams.get("q") || "").toString();
+    setSearchText(q);
+  }, [location.pathname, searchParams]);
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return undefined;
@@ -342,10 +351,24 @@ export default function ListenerLayout() {
           <div className="ls-logo">WAVE</div>
           <div className="ls-search">
             <span className="ls-search-icon">S</span>
-            <input className="ls-search-input" placeholder="Search songs, artists, playlists..." />
+            <input
+              className="ls-search-input"
+              placeholder="Search songs, artists, playlists..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setSearchText("");
+                  return;
+                }
+                if (e.key !== "Enter") return;
+                const q = (searchText || "").trim();
+                navigate(q ? `/listener/search?q=${encodeURIComponent(q)}` : "/listener/search");
+              }}
+            />
           </div>
           <div className="ls-actions">
-            <button className="ls-bell" type="button">Bell</button>
+            
             <button
               className="ls-avatar-btn"
               type="button"
