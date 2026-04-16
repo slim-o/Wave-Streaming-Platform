@@ -43,7 +43,7 @@ export default function ListenerHome() {
           {tracks.length === 0 ? (
             <div className="lh-empty">No tracks available yet.</div>
           ) : (
-            tracks.map((t) => (
+            tracks.map((t, idx) => (
               <div className="lh-card" key={t.id}>
                 <div className="lh-cover">
                   {t.has_cover ? (
@@ -67,7 +67,7 @@ export default function ListenerHome() {
                 <button
                   className="lh-play"
                   type="button"
-                  onClick={() => startTrack(t)}
+                  onClick={() => startTrack(t, { queue: tracks, index: idx })}
                 >
                   {currentTrack?.id === t.id && isPlaying ? "Playing" : "Play"}
                 </button>

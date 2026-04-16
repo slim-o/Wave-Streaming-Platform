@@ -18,6 +18,8 @@ export default function ListenerLayout() {
   const [positionSec, setPositionSec] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [isFlushing, setIsFlushing] = useState(false);
+  const [queueTracks, setQueueTracks] = useState([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
 
   const audioRef = useRef(null);
   const sessionRef = useRef(null);
@@ -105,10 +107,18 @@ export default function ListenerLayout() {
     lastObservedSecRef.current = bounded;
   }
 
-  async function startTrack(track) {
+  async function startTrack(track, opts = null) {
     if (!track?.id) return;
     const audio = audioRef.current;
     if (!audio) return;
+
+    if (opts && Array.isArray(opts.queue)) {
+      setQueueTracks(opts.queue);
+      setQueueIndex(Number.isFinite(Number(opts.index)) ? Number(opts.index) : -1);
+    } else if (queueTracks && queueTracks.length > 0) {
+      const idx = queueTracks.findIndex((t) => String(t?.id) === String(track.id));
+      if (idx >= 0) setQueueIndex(idx);
+    }
 
     if (currentTrack?.id && currentTrack.id !== track.id) {
       suppressPauseFlushRef.current = true;
@@ -164,27 +174,33 @@ export default function ListenerLayout() {
 
   async function playPrevious() {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !currentTrack) return;
     if (audio.currentTime > 3) {
       setPlaybackPosition(0);
       return;
     }
+
+    if (queueTracks.length > 0 && queueIndex > 0) {
+      const prevIdx = queueIndex - 1;
+      const prevTrack = queueTracks[prevIdx];
+      if (prevTrack?.id) {
+        await startTrack(prevTrack, { queue: queueTracks, index: prevIdx });
+        return;
+      }
+    }
+
     setPlaybackPosition(0);
   }
 
   async function playNext() {
-    const audio = audioRef.current;
-    if (!audio) return;
-    suppressPauseFlushRef.current = true;
-    audio.pause();
-    suppressPauseFlushRef.current = false;
-    await flushSession();
-    setCurrentTrack(null);
-    setPositionSec(0);
-    setDurationSec(0);
-    audio.removeAttribute("src");
-    audio.load();
-    setIsPlaying(false);
+    if (!currentTrack) return;
+    if (queueTracks.length > 0 && queueIndex >= 0 && queueIndex + 1 < queueTracks.length) {
+      const nextIdx = queueIndex + 1;
+      const nextTrack = queueTracks[nextIdx];
+      if (nextTrack?.id) {
+        await startTrack(nextTrack, { queue: queueTracks, index: nextIdx });
+      }
+    }
   }
 
   function seekTo(nextSec) {
@@ -316,6 +332,9 @@ export default function ListenerLayout() {
     startTrack
   };
 
+  const hasPrev = Boolean(currentTrack && queueTracks.length > 0 && queueIndex > 0);
+  const hasNext = Boolean(currentTrack && queueTracks.length > 0 && queueIndex >= 0 && queueIndex + 1 < queueTracks.length);
+
   return (
     <ListenerPlayerProvider value={playerContextValue}>
       <div className="ls-shell">
@@ -357,11 +376,29 @@ export default function ListenerLayout() {
           </div>
           <div className="ls-player-center">
             <div className="ls-controls">
-              <button className="ls-control-icon" type="button" onClick={playPrevious} aria-label="Previous track">Prev</button>
-              <button className="ls-play" type="button" onClick={togglePlayPause}>
-                {isPlaying ? "Pause" : "Play"}
+              <button
+                className="ls-control-icon"
+                type="button"
+                onClick={playPrevious}
+                aria-label="Previous track"
+                disabled={!currentTrack}
+                title="Previous"
+              >
+                ⏮
               </button>
-              <button className="ls-control-icon" type="button" onClick={playNext} aria-label="Next track">Next</button>
+              <button className="ls-play" type="button" onClick={togglePlayPause}>
+                {isPlaying ? "⏸" : "▶"}
+              </button>
+              <button
+                className="ls-control-icon"
+                type="button"
+                onClick={playNext}
+                aria-label="Next track"
+                disabled={!hasNext}
+                title="Next"
+              >
+                ⏭
+              </button>
             </div>
             <div className="ls-progress">
               <span>{formatClock(positionSec)}</span>
