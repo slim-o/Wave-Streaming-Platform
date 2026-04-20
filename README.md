@@ -1,42 +1,50 @@
-## Sprint 2 Completion (Implementation + Demo Runbook)
+# Wave Streaming Platform
 
-### Scope Delivered
-Sprint 2 implemented:
-- Authentication-ready backend with JWT login/register/me flow.
-- Role-based routing and protected views (`CREATOR`, `LISTENER`).
-- Royalty run computation endpoint (monthly user-centric allocation).
-- Royalty allocations read endpoint and creator royalties page:
-  - monthly total
-  - per-track breakdown
-  - payout trace (subscription → platform → tracks → creators)
-- Listener-side playback session tracking and play event recording.
-- Listener landing experience (home/search/library/my impact placeholders + layout).
-- Shared profile modal and dynamic display name rendering in navigation/sidebar.
+Prototype music streaming platform focused on royalty transparency. The system records listening activity, runs a repeatable month-scoped royalty settlement, persists contributor-level allocations, and surfaces results in creator and listener reporting views.
 
-Key API Endpoints (Sprint 2)
-POST /api/auth/register
-POST /api/auth/login
-GET /api/auth/me
-POST /api/tracks
-GET /api/tracks
-POST /api/play-events
-POST /api/royalties/run?month=YYYY-MM-01
-GET /api/royalties/allocations?month=YYYY-MM-01
-GET /api/dashboard/summary
-Known Sprint 2 Limits
-Playback is MVP-level and focused on event capture accuracy.
-Object storage is MinIO-first for local development.
-No payout execution/settlement workflow yet (allocation only).
-No email verification/reset in auth flow yet.
+## Deployed demo
 
-### Environment Setup
-Create/update `server/.env` with required values:
+- Functional deployed prototype (Vercel): `https://wave-streaming-platform.vercel.app/`
+- API (Cloud Run): `https://wave-server-988410817606.europe-west2.run.app`
+
+Demo admin account (deployed environment):
+- Email: `assessor@test.com`
+- Password: `Password123!`
+
+## Features
+
+- Auth with JWT and role-based access (`CREATOR`, `LISTENER`, `ADMIN`)
+- UC1: Track registration with contributor splits and media upload (audio plus optional cover)
+- UC2: Creator reporting (monthly royalties, per-track breakdown, payout trace, per-track earnings view)
+- UC4: Listener reporting ("My Impact" month view) driven by persisted play events
+- Admin operations: run monthly royalties, generate subscriptions, view recent runs
+- Audit support: server-generated CSV exports and a read-only ledger events endpoint
+
+## Tech
+
+- Frontend: React + Vite
+- Backend: Express
+- Database: PostgreSQL
+- Object storage: S3-compatible adapter (MinIO for local; cloud object storage supported via env)
+
+## Local development
+
+### Prerequisites
+
+- Node.js (for frontend and backend)
+- PostgreSQL
+- S3-compatible object storage (MinIO recommended for local)
+
+### 1) Backend env
+
+Create `server/.env`:
 
 ```env
 PORT=3000
-DATABASE_URL=<your_postgres_url>
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DBNAME
 JWT_SECRET=<strong_secret_min_32_chars>
 
+# Storage adapter
 STORAGE_PROVIDER=minio
 MINIO_ENDPOINT=http://127.0.0.1:9000
 MINIO_REGION=us-east-1
@@ -44,38 +52,121 @@ MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=wave-audio
 MINIO_FORCE_PATH_STYLE=true
+```
 
-Run Locally
-1. Start PostgreSQL.
-2. Start MinIO.
-3. Start backend:
-    cd server
-    npm install
-    npm run dev
-4. Start frontend:
-    npm install
-    npm run dev
+Note: this repo does not include automated DB migrations. The database schema must be provisioned before running.
 
+### 2) Frontend env (optional)
 
-TO-DO:
-    FULL LOGIN USER SYSTEM
-    
-    app.get("/api/royalties/allocations" 
-        add query params so it scales into UC2:
-            ?trackId=... (show one track’s breakdown)
-            ?contributor=... or ?email=... (later map contributors to users)
+For local dev, Vite proxies `/api` to a backend target. `VITE_API_PROXY_TARGET` defaults to `http://localhost:3000`.
 
-royalties run (powershell)
+Create `.env.local` if needed:
 
-Invoke-RestMethod -Method Post "http://localhost:3000/api/royalties/run?month=2026-03-01"
+```env
+VITE_API_PROXY_TARGET=http://localhost:3000
+```
 
-  
-minIO storage solution
+For production builds that call the API directly (no proxy), set:
 
-mkdir C:\minio-data -Force
-$env:MINIO_ROOT_USER="minioadmin"
-$env:MINIO_ROOT_PASSWORD="minioadmin"
-$ennvnnnv:MINIO_REGION_NAME="us-east-1"
-& "$env:USERPROFILE\go\bin\minio.exe" server C:\minio-data --address ":9000" --console-address ":9001"
+```env
+VITE_API_BASE_URL=https://your-api-host
+```
 
-& "C:\Users\ikema\go\bin\minio.exe" server C:\minio-data --address ":9000" --console-address ":9001"
+### 3) Run the apps
+
+Backend:
+
+```powershell
+cd server
+npm install
+npm run dev
+```
+
+Frontend:
+
+```powershell
+npm install
+npm run dev
+```
+
+## Key API endpoints
+
+Auth
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+
+Tracks and media
+- `POST /api/tracks` (multipart form upload)
+- `GET /api/tracks`
+- `GET /api/tracks/:id/cover`
+- `GET /api/tracks/:id/stream`
+
+Playback and impact
+- `POST /api/play-events`
+- `GET /api/listener/impact?month=YYYY-MM-01`
+
+Royalties and exports
+- `POST /api/royalties/run?month=YYYY-MM-01` (admin only)
+- `GET /api/royalties/allocations?month=YYYY-MM-01`
+- `GET /api/royalties/export?month=YYYY-MM-01&scope=me|all`
+- `GET /api/tracks/:id/earnings?month=YYYY-MM-01`
+- `GET /api/tracks/:id/export?month=YYYY-MM-01`
+
+Admin
+- `GET /api/admin/royalties/runs?limit=N`
+- `POST /api/admin/subscriptions/generate`
+
+Audit
+- `GET /api/ledger/events?limit=N&cursor=...` (creator/admin)
+
+## Known limitations
+
+- Prototype scope: limited automated testing coverage
+- Ledger inspection is API-based (no dedicated UI view)
+- Some UX and edge-case handling remain future work as mentioned in the report
+
+## Demo flow
+
+This is the shortest end-to-end path to see the prototype working in a browser.
+
+1) Log in
+- Use the demo admin account above (or register a new account via the login UI).
+
+2) Create some data (tracks + listening)
+- Register at least 1 track as a creator (audio file plus optional cover).
+- Log in as a listener and play tracks for at least 10 seconds so play events are persisted.
+
+3) Generate subscriptions (admin) and run royalties for a month
+- Pick a month start in `YYYY-MM-01` format (example: `2026-04-01`).
+- Generate subscriptions for that month, then execute the royalty run.
+
+Example (PowerShell):
+
+```powershell
+$API = "https://wave-server-988410817606.europe-west2.run.app"
+
+$login = @{ email="assessor@test.com"; password="Password123!" } | ConvertTo-Json
+$auth  = Invoke-RestMethod -Method Post -ContentType "application/json" -Body $login "$API/api/auth/login"
+$TOKEN = $auth.token
+
+$monthStart = "2026-04-01"
+
+# Generate subscriptions (repeatable demo runs)
+Invoke-RestMethod -Method Post "$API/api/admin/subscriptions/generate" `
+  -Headers @{ Authorization = "Bearer $TOKEN" } `
+  -ContentType "application/json" `
+  -Body (@{ monthStart=$monthStart; amountPennies=999 } | ConvertTo-Json)
+
+# Run royalties for the month
+Invoke-RestMethod -Method Post "$API/api/royalties/run?month=$monthStart" `
+  -Headers @{ Authorization = "Bearer $TOKEN" }
+```
+
+4) Inspect reporting
+- Creator: open Royalties, select the month, view per-track breakdown and payout trace.
+- Listener: open My Impact, select the month, view impact metrics and top tracks/artists.
+
+5) Export and audit
+- Export monthly royalties CSV (creator scope) and per-track CSV.
+- Inspect ledger events via `GET /api/ledger/events` (creator/admin).
